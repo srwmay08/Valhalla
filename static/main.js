@@ -15,6 +15,45 @@ const BIOMES = {
     "Ocean": new THREE.Color(0x00008B)     // (0, 0, 139)
 };
 
+// --- OpenDominion Economic Data ---
+const BUILDINGS = {
+    "Plain": [
+        { name: "Alchemy", details: "Produces 45 Platinum/hr." },
+        { name: "Farm", details: "Produces 80 Food/hr." },
+        { name: "Smithy", details: "Reduces military training cost." },
+        { name: "Masonry", details: "Increases Castle Improvement effectiveness." }
+    ],
+    "Forest": [
+        { name: "Lumberyard", details: "Produces 50 Lumber/hr." },
+        { name: "Forest Haven", details: "Offers protection against theft and spies." }
+    ],
+    "Mountain": [
+        { name: "Ore Mine", details: "Produces 60 Ore/hr." },
+        { name: "Gryphon Nest", details: "Increases Offensive Power." }
+    ],
+    "Cavern": [
+        { name: "Diamond Mine", details: "Produces 15 Gems/hr." },
+        { name: "School", details: "Produces Research Points." }
+    ],
+    "Hill": [
+        { name: "Factory", details: "Reduces building/rezoning cost." },
+        { name: "Guard Tower", details: "Increases Defensive Power." },
+        { name: "Shrine", details: "Increases hero experience gain." },
+        { name: "Barracks", details: "Houses 36 military units." }
+    ],
+    "Swamp": [
+        { name: "Tower", details: "Produces 25 Mana/hr." },
+        { name: "Temple", details: "Boosts population growth." },
+        { name: "Wizard Guild", details: "Reduces magic costs and enhances wizards." }
+    ],
+    "Water": [
+        { name: "Dock", details: "Produces 35 Food/hr and Boats." }
+    ],
+    "Coast": [{ name: "Coast", details: "Coastal area, suitable for Docks." }],
+    "Ocean": [{ name: "Ocean", details: "Deep water, not buildable." }]
+};
+
+
 // --- Scene Setup ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -47,7 +86,7 @@ function createBiomeSphere(subdivisions) {
     }
 
     const faceNeighbors = findNeighbors(faces);
-    const faceBiomes = assignBiomes(faces, faceNeighbors);
+    const { faceBiomes, faceBuildings } = assignBiomesAndBuildings(faces, faceNeighbors);
     
     // Create a color attribute for the geometry
     const colors = [];
@@ -65,6 +104,11 @@ function createBiomeSphere(subdivisions) {
     // Use a material that respects vertex colors
     const material = new THREE.MeshBasicMaterial({ vertexColors: true });
     const sphere = new THREE.Mesh(geometry, material);
+
+    // Store custom data on the sphere object
+    sphere.userData.faceBiomes = faceBiomes;
+    sphere.userData.faceBuildings = faceBuildings;
+    
     return sphere;
 }
 
@@ -98,8 +142,9 @@ function findNeighbors(faces) {
     return neighbors.map(set => Array.from(set));
 }
 
-function assignBiomes(faces, faceNeighbors) {
+function assignBiomesAndBuildings(faces, faceNeighbors) {
     const faceBiomes = Array(faces.length);
+    const faceBuildings = Array(faces.length);
     const nonCoastBiomes = Object.keys(BIOMES).filter(b => b !== "Coast" && b !== "Ocean");
     const oceanChance = 1.0 / (nonCoastBiomes.length + 1);
 
@@ -128,13 +173,68 @@ function assignBiomes(faces, faceNeighbors) {
             }
         }
     }
-    return finalBiomes;
+    
+    // 3. Third Pass: Assign a building based on the final biome
+    for (let i = 0; i < faces.length; i++) {
+        const biome = finalBiomes[i];
+        const possibleBuildings = BUILDINGS[biome] || [];
+        if (possibleBuildings.length > 0) {
+            faceBuildings[i] = possibleBuildings[Math.floor(Math.random() * possibleBuildings.length)];
+        } else {
+            faceBuildings[i] = { name: "Barren Land", details: "No buildings available for this biome." };
+        }
+    }
+
+    return { faceBiomes: finalBiomes, faceBuildings };
 }
 
 
 // --- Add objects to scene ---
 const sphere = createBiomeSphere(SUBDIVISIONS);
 scene.add(sphere);
+
+// --- Interactivity ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const infoBox = document.getElementById('info-box');
+
+function updateInfoBox(faceIndex) {
+    if (faceIndex !== null && sphere.userData.faceBiomes && sphere.userData.faceBuildings) {
+        const biome = sphere.userData.faceBiomes[faceIndex];
+        const building = sphere.userData.faceBuildings[faceIndex];
+
+        infoBox.classList.remove('hidden');
+        document.getElementById('info-biome').textContent = biome;
+        document.getElementById('info-building').textContent = `Building: ${building.name}`;
+        document.getElementById('info-details').textContent = building.details;
+    } else {
+        infoBox.classList.add('hidden');
+    }
+}
+
+function onMouseClick(event) {
+    // We don't want to select a face when dragging to rotate
+    if (controls.state !== -1) return;
+
+    // Calculate mouse position in normalized device coordinates
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObject(sphere);
+
+    if (intersects.length > 0) {
+        const faceIndex = intersects[0].faceIndex;
+        updateInfoBox(faceIndex);
+    } else {
+        updateInfoBox(null);
+    }
+}
+
+// Listen for mouse up instead of click to avoid firing after a drag
+window.addEventListener('mouseup', onMouseClick);
+
 
 // --- Animation Loop ---
 function animate() {

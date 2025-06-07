@@ -8,10 +8,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- The canvas where the 3D scene will be rendered -->
     <canvas id="bg"></canvas>
+
+    <div id="info-box" class="hidden">
+        <h2 id="info-biome"></h2>
+        <p id="info-building"></p>
+        <p id="info-details"></p>
+    </div>
     
-    <!-- Using an import map for modern, clean Three.js imports -->
     <script type="importmap">
         {
             "imports": {
@@ -21,7 +25,6 @@
         }
     </script>
     
-    <!-- The main application script -->
     <script type="module" src="main.js"></script>
 </body>
 </html>
