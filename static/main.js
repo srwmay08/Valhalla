@@ -101,29 +101,6 @@ function updateVisuals(state) {
     sphere.geometry.attributes.color.needsUpdate = true;
 }
 
-function updateStatusDisplay(state) {
-    const stateEl = document.getElementById('game-state');
-    const resourcesEl = document.getElementById('player-resources');
-    const promptEl = document.getElementById('info-prompt');
-    const infoBoxEl = document.getElementById('info-box');
-
-    if (stateEl) stateEl.textContent = state.state;
-    
-    const player1 = state.players['Player 1'];
-    if (resourcesEl && player1) {
-        resourcesEl.textContent = JSON.stringify(player1.resources, null, 2);
-    }
-    
-    if (infoBoxEl && promptEl) {
-        if (state.state === 'SETUP') {
-            infoBoxEl.classList.remove('hidden');
-            promptEl.textContent = "Click an unclaimed territory to select a starting location.";
-        } else {
-            infoBoxEl.classList.add('hidden');
-        }
-    }
-}
-
 function onMouseDown(event) {
     isDragging = false;
     mouseDownPos.set(event.clientX, event.clientY);
@@ -161,9 +138,43 @@ async function onMouseUp(event) {
         }
     }
 }
+function updateStatusDisplay(state) {
+    const stateEl = document.getElementById('game-state');
+    const resourcesEl = document.getElementById('player-resources');
+    const promptEl = document.getElementById('info-prompt');
+    const infoBoxEl = document.getElementById('info-box');
+
+    if (stateEl) stateEl.textContent = state.state;
+    
+    const player1 = state.players['Player 1'];
+    if (resourcesEl && player1) {
+        resourcesEl.textContent = JSON.stringify(player1.resources, null, 2);
+    }
+    
+    if (infoBoxEl && promptEl) {
+        if (state.state === 'SETUP') {
+            infoBoxEl.classList.remove('hidden');
+            promptEl.textContent = "Click an unclaimed territory to select a starting location.";
+        } else if (state.state === 'COUNTDOWN' && state.countdown_end_time) {
+            infoBoxEl.classList.remove('hidden');
+            const now = Date.now() / 1000;
+            const remaining = Math.max(0, state.countdown_end_time - now);
+            promptEl.textContent = `Game starting in ${Math.ceil(remaining)} seconds...`;
+        }
+        else {
+            infoBoxEl.classList.add('hidden');
+        }
+    }
+}
 
 function animate() {
     requestAnimationFrame(animate);
+    
+    // Continuously update the display during the countdown to show the timer ticking.
+    if (gameState.state === 'COUNTDOWN') {
+        updateStatusDisplay(gameState);
+    }
+    
     controls.update();
     renderer.render(scene, camera);
 }

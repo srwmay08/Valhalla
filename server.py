@@ -107,6 +107,7 @@ class GameEngine:
         self.players = []
         self.player_colors = {}
         self.game_state = 'SETUP'
+        self.countdown_end_time = None
         self.last_tick_time = time.time()
         self.hourly_production_rates = { "Alchemy": 45, "Peasant": 2.7, "Farm": 80, "Dock": 35, "Lumberyard": 50, "Tower": 25, "Wizard Guild": 5, "Ore Mine": 60, "Diamond Mine": 15, "FoodConsumption": 0.25 }
     
@@ -116,11 +117,21 @@ class GameEngine:
             self.state_changed_cv.notify_all()
 
     def setup_game(self, num_human_players=1, num_ai_enemies=3):
+        """Initializes the game with players and AI, but does not assign locations."""
         with self.lock:
             self.players, self.player_colors = [], {}
-            for i in range(num_human_players): self.players.append(Player(f"Player {i+1}"))
-            for i in range(num_ai_enemies): self.players.append(Player(f"AI Enemy {i+1}", is_ai=True))
-            for i, p in enumerate(self.players): self.player_colors[p.name] = config.PLAYER_COLORS[i]
+            # Add human players
+            for i in range(num_human_players):
+                self.players.append(Player(f"Player {i+1}", is_ai=False))
+            # Add AI players
+            num_ai_to_add = min(num_ai_enemies, config.MAX_PLAYERS - len(self.players))
+            for i in range(num_ai_to_add):
+                self.players.append(Player(f"AI Enemy {i+1}", is_ai=True))
+            
+            # Assign colors to all players
+            for i, p in enumerate(self.players):
+                self.player_colors[p.name] = config.PLAYER_COLORS[i]
+                
         self._notify_state_change()
 
     def start_player_game(self, player_name, face_index):
@@ -137,14 +148,14 @@ class GameEngine:
                         idx = random.choice(available)
                         p.owned_faces.append(idx); p.buildings[idx] = "Farm"
                         forbidden.add(idx); forbidden.update(self.sphere.face_neighbors[idx])
-            self.game_state = 'RUNNING'
-            self.last_tick_time = time.time()
+            self.game_state = 'COUNTDOWN'
+            self.countdown_end_time = time.time() + config.GAME_SETUP_COUNTDOWN
         self._notify_state_change()
         return True
 
     def get_state_json(self):
         with self.lock:
-            state = {'version': self.state_version, 'state': self.game_state, 'faces': self.sphere.face_biomes, 'players': {}}
+            state = {'version': self.state_version, 'state': self.game_state, 'countdown_end_time': self.countdown_end_time, 'faces': self.sphere.face_biomes, 'players': {}}
             for p in self.players:
                 state['players'][p.name] = {'is_ai': p.is_ai, 'owned_faces': p.owned_faces, 'resources': {k: int(v) for k,v in p.resources.items()}}
             return json.dumps(state)
@@ -153,16 +164,21 @@ class GameEngine:
         while True:
             state_did_change = False
             with self.lock:
-                if self.game_state == 'RUNNING' and (time.time() - self.last_tick_time >= config.TICK_INTERVAL_SECONDS):
-                    print("--- Game Tick ---")
-                    for p in self.players:
-                        p.update_resources(self.hourly_production_rates, config.TICK_INTERVAL_SECONDS / 3600.0)
+                if self.game_state == 'COUNTDOWN' and self.countdown_end_time and time.time() >= self.countdown_end_time:
+                    self.game_state = 'RUNNING'
                     self.last_tick_time = time.time()
                     state_did_change = True
+                
+                if self.game_state == 'RUNNING' and (time.time() - self.last_tick_time >= config.SECONDS_BETWEEN_TICKS):
+                    print("--- Game Tick ---")
+                    for p in self.players:
+                        p.update_resources(self.hourly_production_rates, config.SECONDS_BETWEEN_TICKS / 3600.0)
+                    self.last_tick_time = time.time()
+                    state_did_change = True
+            
             if state_did_change:
                 self._notify_state_change()
-            time.sleep(1)
-
+            time.sleep(0.5)
 game_engine = GameEngine()
 game_engine.setup_game()
 

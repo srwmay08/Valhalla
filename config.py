@@ -4,9 +4,11 @@ Configuration file for the game engine settings.
 """
 
 # --- Game Timing ---
-# TICK_INTERVAL_SECONDS: How often the game state updates (e.g., resources are generated).
-# Set to 60 for one-minute ticks as requested. Can be adjusted to 3600 for hours, etc.
-TICK_INTERVAL_SECONDS = 60
+# GAME_SETUP_COUNTDOWN: The number of seconds the countdown lasts after a player chooses a start tile.
+GAME_SETUP_COUNTDOWN = 15
+
+# SECONDS_BETWEEN_TICKS: How often resources are generated once the game is running.
+SECONDS_BETWEEN_TICKS = 60
 
 # --- Player and Game Setup ---
 # Starting resources for each player
