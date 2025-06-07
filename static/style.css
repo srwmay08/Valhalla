@@ -40,3 +40,43 @@ canvas#bg {
     margin-top: 0;
     color: #7CFC00; /* Light green for title */
 }
+
+/* ... existing styles ... */
+#info-box h2 {
+    margin-top: 0;
+    color: #FFD700; /* Gold for prompts */
+    text-align: center;
+}
+
+/* New styles for the status display panel */
+#status-display {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.75);
+    color: white;
+    border: 1px solid white;
+    border-radius: 8px;
+    width: 280px;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+#status-display h2, #status-display h3 {
+    margin: 0 0 5px 0;
+    font-family: sans-serif;
+}
+
+#status-display h2 {
+    font-size: 18px;
+}
+#status-display h3 {
+    font-size: 16px;
+    border-top: 1px solid #555;
+    padding-top: 10px;
+}
+#status-display pre {
+    margin: 0;
+    white-space: pre-wrap;
+}

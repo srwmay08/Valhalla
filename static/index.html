@@ -8,12 +8,16 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="status-display">
+        <h2>Game Status: <span id="game-state">Connecting...</span></h2>
+        <h3>Player 1 Resources</h3>
+        <pre id="player-resources"></pre>
+    </div>
+
     <canvas id="bg"></canvas>
 
     <div id="info-box" class="hidden">
-        <h2 id="info-biome"></h2>
-        <p id="info-building"></p>
-        <p id="info-details"></p>
+        <h2 id="info-prompt"></h2>
     </div>
     
     <script type="importmap">
