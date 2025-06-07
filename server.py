@@ -7,7 +7,8 @@ import threading
 from math import sqrt
 import numpy as np
 import random
-import config # Assuming config.py exists from previous steps
+import config 
+from urllib.parse import urlparse, parse_qs
 
 PORT = 8000
 WEB_DIR = 'static'
@@ -15,7 +16,6 @@ WEB_DIR = 'static'
 # --- Game Logic (Merged from sphere.py) ---
 
 class Player:
-    # This class is copied verbatim from sphere.py
     def __init__(self, name, is_ai=False):
         self.name = name
         self.is_ai = is_ai
@@ -45,7 +45,6 @@ class Player:
             if value < 0: self.resources[resource] = 0
 
 class IcosahedronSphere:
-    # This class is copied verbatim from sphere.py
     def __init__(self, subdivisions):
         self.subdivisions = subdivisions
         self.vertices, self.faces = self._create_icosahedron()
@@ -100,64 +99,68 @@ class IcosahedronSphere:
                 self.face_biomes[i] = "Coast"
 
 class GameEngine:
-    # This class is copied from sphere.py and adapted for the server
     def __init__(self):
         self.lock = threading.Lock()
+        self.state_changed_cv = threading.Condition(self.lock)
+        self.state_version = 0
         self.sphere = IcosahedronSphere(subdivisions=4)
         self.players = []
         self.player_colors = {}
         self.game_state = 'SETUP'
         self.last_tick_time = time.time()
         self.hourly_production_rates = { "Alchemy": 45, "Peasant": 2.7, "Farm": 80, "Dock": 35, "Lumberyard": 50, "Tower": 25, "Wizard Guild": 5, "Ore Mine": 60, "Diamond Mine": 15, "FoodConsumption": 0.25 }
+    
+    def _notify_state_change(self):
+        with self.state_changed_cv:
+            self.state_version += 1
+            self.state_changed_cv.notify_all()
+
     def setup_game(self, num_human_players=1, num_ai_enemies=3):
         with self.lock:
             self.players, self.player_colors = [], {}
             for i in range(num_human_players): self.players.append(Player(f"Player {i+1}"))
             for i in range(num_ai_enemies): self.players.append(Player(f"AI Enemy {i+1}", is_ai=True))
             for i, p in enumerate(self.players): self.player_colors[p.name] = config.PLAYER_COLORS[i]
+        self._notify_state_change()
+
     def start_player_game(self, player_name, face_index):
         with self.lock:
             player = next((p for p in self.players if p.name == player_name), None)
             if not player or self.game_state != 'SETUP': return False
             player.owned_faces.append(face_index)
             player.buildings[face_index] = "Farm"
-            # Assign AI locations away from the player
             forbidden = {face_index, *self.sphere.face_neighbors[face_index]}
             for p in self.players:
                 if p.is_ai:
                     available = list(set(range(len(self.sphere.faces))) - forbidden)
                     if available:
                         idx = random.choice(available)
-                        p.owned_faces.append(idx)
-                        p.buildings[idx] = "Farm"
-                        forbidden.add(idx)
-                        forbidden.update(self.sphere.face_neighbors[idx])
+                        p.owned_faces.append(idx); p.buildings[idx] = "Farm"
+                        forbidden.add(idx); forbidden.update(self.sphere.face_neighbors[idx])
             self.game_state = 'RUNNING'
             self.last_tick_time = time.time()
-            return True
+        self._notify_state_change()
+        return True
+
     def get_state_json(self):
         with self.lock:
-            state = {
-                'state': self.game_state,
-                'faces': self.sphere.face_biomes,
-                'players': {}
-            }
+            state = {'version': self.state_version, 'state': self.game_state, 'faces': self.sphere.face_biomes, 'players': {}}
             for p in self.players:
-                state['players'][p.name] = {
-                    'is_ai': p.is_ai,
-                    'owned_faces': p.owned_faces,
-                    'resources': {k: int(v) for k,v in p.resources.items()}
-                }
+                state['players'][p.name] = {'is_ai': p.is_ai, 'owned_faces': p.owned_faces, 'resources': {k: int(v) for k,v in p.resources.items()}}
             return json.dumps(state)
+
     def run_tick_loop(self):
         while True:
+            state_did_change = False
             with self.lock:
-                if self.game_state == 'RUNNING':
-                    if time.time() - self.last_tick_time >= config.TICK_INTERVAL_SECONDS:
-                        print("--- Game Tick ---")
-                        for p in self.players:
-                            p.update_resources(self.hourly_production_rates, config.TICK_INTERVAL_SECONDS / 3600.0)
-                        self.last_tick_time = time.time()
+                if self.game_state == 'RUNNING' and (time.time() - self.last_tick_time >= config.TICK_INTERVAL_SECONDS):
+                    print("--- Game Tick ---")
+                    for p in self.players:
+                        p.update_resources(self.hourly_production_rates, config.TICK_INTERVAL_SECONDS / 3600.0)
+                    self.last_tick_time = time.time()
+                    state_did_change = True
+            if state_did_change:
+                self._notify_state_change()
             time.sleep(1)
 
 game_engine = GameEngine()
@@ -167,7 +170,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
     def do_GET(self):
-        if self.path == '/api/gamestate':
+        if self.path.startswith('/api/gamestate'):
+            query_components = parse_qs(urlparse(self.path).query)
+            client_version = int(query_components.get('version', [0])[0])
+            with game_engine.state_changed_cv:
+                if game_engine.state_version == client_version:
+                    game_engine.state_changed_cv.wait(timeout=25.0)
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -179,12 +187,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             post_data = json.loads(self.rfile.read(content_length))
             success = game_engine.start_player_game("Player 1", post_data['faceIndex'])
-            self.send_response(200 if success else 400)
-            self.end_headers()
+            self.send_response(200 if success else 400); self.end_headers()
             self.wfile.write(json.dumps({'success': success}).encode('utf-8'))
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send_response(404); self.end_headers()
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 engine_thread = threading.Thread(target=game_engine.run_tick_loop, daemon=True)
