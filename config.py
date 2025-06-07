@@ -8,7 +8,7 @@ Configuration file for the game engine settings.
 GAME_SETUP_COUNTDOWN = 15
 
 # SECONDS_BETWEEN_TICKS: How often resources are generated once the game is running.
-SECONDS_BETWEEN_TICKS = 60
+SECONDS_BETWEEN_TICKS = 10 # Set to 1 hour (3600 seconds) as per game description
 
 # --- Player and Game Setup ---
 # Starting resources for each player

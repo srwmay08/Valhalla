@@ -75,14 +75,15 @@ async function fetchGameState() {
 }
 
 function updateVisuals(state) {
-    if (!sphere || !state.faces) return;
+    if (!sphere || !state.faces || !state.num_faces) return;
 
     const faceOwners = {};
     const playerNames = Object.keys(state.players);
-    playerNames.forEach((name, i) => {
+    playerNames.forEach((name) => {
         const p = state.players[name];
-        p.owned_faces.forEach(faceIdx => {
-            faceOwners[faceIdx] = playerNames.indexOf(name);
+        p.owned_faces.forEach(tileIndex => {
+            const faceIndex = tileIndex % state.num_faces;
+            faceOwners[faceIndex] = playerNames.indexOf(name);
         });
     });
 
@@ -101,43 +102,6 @@ function updateVisuals(state) {
     sphere.geometry.attributes.color.needsUpdate = true;
 }
 
-function onMouseDown(event) {
-    isDragging = false;
-    mouseDownPos.set(event.clientX, event.clientY);
-}
-
-function onMouseMove(event) {
-    if (mouseDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) {
-        isDragging = true;
-    }
-}
-
-async function onMouseUp(event) {
-    if (isDragging || gameState.state !== 'SETUP') return;
-
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(sphere);
-
-    if (intersects.length > 0) {
-        const faceIndex = Math.floor(intersects[0].face.a / 3);
-        
-        const isOwned = Object.values(gameState.players).some(p => p.owned_faces.includes(faceIndex));
-        if (isOwned) {
-            alert("This territory is already claimed.");
-            return;
-        }
-
-        if (confirm(`Do you want to start in territory ${faceIndex}?`)) {
-            await fetch('/api/startgame', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ faceIndex: faceIndex })
-            });
-        }
-    }
-}
 function updateStatusDisplay(state) {
     const stateEl = document.getElementById('game-state');
     const resourcesEl = document.getElementById('player-resources');
@@ -160,9 +124,64 @@ function updateStatusDisplay(state) {
             const now = Date.now() / 1000;
             const remaining = Math.max(0, state.countdown_end_time - now);
             promptEl.textContent = `Game starting in ${Math.ceil(remaining)} seconds...`;
-        }
-        else {
+        } else {
             infoBoxEl.classList.add('hidden');
+        }
+    }
+}
+
+function onMouseDown(event) {
+    isDragging = false;
+    mouseDownPos.set(event.clientX, event.clientY);
+}
+
+function onMouseMove(event) {
+    if (mouseDownPos.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) {
+        isDragging = true;
+    }
+}
+
+async function onMouseUp(event) {
+    if (isDragging) return; // Ignore drags
+
+    if (!gameState.state) { // Guard against clicks before first state is fetched
+        return;
+    }
+
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(sphere);
+
+    if (intersects.length > 0) {
+        const faceIndex = Math.floor(intersects[0].face.a / 3);
+        
+        // Logic for SETUP state
+        if (gameState.state === 'SETUP') {
+            const isOwned = Object.values(gameState.players).some(p => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
+            if (isOwned) {
+                alert("This territory is already claimed.");
+                return;
+            }
+            if (confirm(`Do you want to start in territory ${faceIndex}?`)) {
+                await fetch('/api/startgame', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faceIndex: faceIndex }) });
+            }
+        } 
+        // Logic for RUNNING state
+        else if (gameState.state === 'RUNNING') {
+            const player1 = gameState.players['Player 1'];
+            if (!player1) return;
+
+            const playerOwnedFaces = new Set(player1.owned_faces.map(f => f % gameState.num_faces));
+            const isOwnedByAnyone = Object.values(gameState.players).some(p => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
+            const neighbors = gameState.neighbors[faceIndex] || [];
+            const isAdjacent = neighbors.some(n => playerOwnedFaces.has(n));
+            
+            if (!isOwnedByAnyone && isAdjacent) {
+                if (confirm(`Attack neutral territory ${faceIndex}?`)) {
+                    await fetch('/api/attack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faceIndex: faceIndex }) });
+                }
+            }
         }
     }
 }
@@ -170,7 +189,6 @@ function updateStatusDisplay(state) {
 function animate() {
     requestAnimationFrame(animate);
     
-    // Continuously update the display during the countdown to show the timer ticking.
     if (gameState.state === 'COUNTDOWN') {
         updateStatusDisplay(gameState);
     }
