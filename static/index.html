@@ -7,20 +7,33 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="status-display">
-        <h2>Game Status: <span id="game-state">Connecting...</span></h2>
-        <h3>Player 1 Resources</h3>
-        <div id="player-resources" class="resource-grid"></div>
-        <h3>Income (/hr)</h3>
-        <div id="player-income" class="resource-grid"></div>
+    <div id="hud">
+        <h4>Player Status <span id="game-state-hud"></span></h4>
+        <div class="hud-section">
+            <h5>Current Resources</h5>
+            <div id="hud-resources" class="resource-grid"></div>
+        </div>
+        <div class="hud-section">
+            <h5>Income (/hr)</h5>
+            <div id="hud-income" class="resource-grid"></div>
+        </div>
+        <div class="hud-section">
+            <h5 id="next-tick-label">Next Tick In</h5>
+            <div id="next-tick-countdown">--:--</div>
+        </div>
     </div>
+
     <canvas id="bg"></canvas>
+
     <div id="info-prompt" class="hidden"></div>
-    <div id="tooltip" class="hidden"></div>
+
+    <div id="tooltip" class.hidden"></div>
+
     <div id="event-log-container">
         <h4>Event Log</h4>
         <ul id="event-log"></ul>
     </div>
+    
     <script type="importmap">
         {
             "imports": {
@@ -29,6 +42,7 @@
             }
         }
     </script>
+    
     <script type="module" src="main.js"></script>
 </body>
 </html>

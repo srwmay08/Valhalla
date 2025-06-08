@@ -1,18 +1,133 @@
-body{margin:0;overflow:hidden;background-color:#000;font-family:sans-serif}
-canvas#bg{position:fixed;top:0;left:0;width:100%;height:100%;display:block}
-#info-prompt{position:absolute;top:20px;left:50%;transform:translateX(-50%);padding:15px;background:rgba(0,0,0,.85);color:#ffd700;border:1px solid #ffd700;border-radius:8px;max-width:600px;pointer-events:none;text-align:center;font-size:1.2em}
-#info-prompt.hidden{display:none}
-#status-display{position:absolute;top:20px;right:20px;padding:10px;background:rgba(0,0,0,.75);color:#fff;border:1px solid #fff;border-radius:8px;width:280px;font-family:monospace;font-size:14px}
-#status-display h2,#status-display h3{margin:0 0 5px;font-family:sans-serif}
-#status-display h2{font-size:18px}
-#status-display h3{font-size:16px;border-top:1px solid #555;padding-top:10px;margin-top:10px}
-.resource-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:12px}
-.resource-grid span{display:contents}
-.resource-name{text-align:left;color:#aaa}
-.resource-value{text-align:right}
-#event-log-container{position:absolute;bottom:20px;left:20px;width:450px;height:150px;background:rgba(0,0,0,.75);color:#fff;border:1px solid #fff;border-radius:8px;padding:10px;font-family:monospace;display:flex;flex-direction:column}
-#event-log-container h4{margin:0 0 5px;padding-bottom:5px;border-bottom:1px solid #555;font-family:sans-serif;font-size:16px}
-#event-log{list-style:none;padding:0;margin:0;overflow-y:auto;font-size:12px;flex-grow:1}
-#event-log li{padding:2px 0;border-bottom:1px solid #222}
-#tooltip{position:absolute;padding:5px 10px;background:rgba(0,0,0,.8);color:#fff;border-radius:4px;pointer-events:none;font-size:12px;z-index:100}
-#tooltip.hidden{display:none}
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #000;
+    font-family: sans-serif;
+}
+canvas#bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+#info-prompt {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px;
+    background: rgba(0, 0, 0, .85);
+    color: #ffd700;
+    border: 1px solid #ffd700;
+    border-radius: 8px;
+    max-width: 600px;
+    pointer-events: none;
+    text-align: center;
+    font-size: 1.2em;
+    z-index: 10;
+}
+#info-prompt.hidden {
+    display: none;
+}
+#hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 280px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    border: 1px solid #fff;
+    border-radius: 8px;
+    font-family: monospace;
+}
+#hud h4, #hud h5 {
+    margin: 0 0 5px;
+    font-family: sans-serif;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #555;
+}
+#hud h4 {
+    font-size: 16px;
+    text-align: center;
+}
+#hud h5 {
+    font-size: 14px;
+    margin-top: 10px;
+    border: none;
+    padding: 0;
+}
+.hud-section {
+    margin-top: 10px;
+}
+.resource-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 10px;
+    font-size: 12px;
+}
+.resource-grid span {
+    display: contents;
+}
+.resource-name {
+    text-align: left;
+    color: #aaa;
+}
+.resource-value {
+    text-align: right;
+}
+#next-tick-countdown {
+    font-size: 24px;
+    text-align: center;
+    color: #7CFC00;
+    letter-spacing: 2px;
+}
+#event-log-container {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 450px;
+    height: 150px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    border: 1px solid #fff;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: monospace;
+    display: flex;
+    flex-direction: column;
+}
+#event-log-container h4 {
+    margin: 0 0 5px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #555;
+    font-family: sans-serif;
+    font-size: 16px;
+}
+#event-log {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    font-size: 12px;
+    flex-grow: 1;
+}
+#event-log li {
+    padding: 2px 0;
+    border-bottom: 1px solid #222;
+}
+#tooltip {
+    position: absolute;
+    padding: 5px 10px;
+    background: rgba(0, 0, 0, .8);
+    color: #fff;
+    border-radius: 4px;
+    pointer-events: none;
+    font-size: 12px;
+    z-index: 100;
+}
+#tooltip.hidden {
+    display: none;
+}

@@ -191,10 +191,28 @@ class GameEngine:
         return "invalid"
 
     def get_state_json(self):
+        """Serializes the current game state into a JSON string, including tick timing info."""
         with self.lock:
-            state = {'version': self.state_version, 'state': self.game_state, 'countdown_end_time': self.countdown_end_time, 'faces': self.sphere.face_biomes, 'num_faces': self.num_faces, 'neighbors': {k: list(v) for k, v in self.sphere.face_neighbors.items()}, 'event_log': self.event_log, 'players': {}}
+            tick_interval = getattr(config, 'SECONDS_BETWEEN_TICKS', 3600)
+            state = {
+                'version': self.state_version, 
+                'state': self.game_state, 
+                'countdown_end_time': self.countdown_end_time,
+                'last_tick_time': self.last_tick_time,
+                'tick_interval': tick_interval,
+                'faces': self.sphere.face_biomes, 
+                'num_faces': self.num_faces, 
+                'neighbors': {k: list(v) for k, v in self.sphere.face_neighbors.items()}, 
+                'event_log': self.event_log, 
+                'players': {}
+            }
             for p in self.players:
-                state['players'][p.name] = {'is_ai': p.is_ai, 'owned_faces': p.owned_faces, 'resources': {k: int(v) for k, v in p.resources.items()}, 'hourly_gains': {k: round(v, 1) for k, v in p.get_hourly_net_gains(self.hourly_production_rates).items()}}
+                state['players'][p.name] = {
+                    'is_ai': p.is_ai, 
+                    'owned_faces': p.owned_faces, 
+                    'resources': {k: int(v) for k,v in p.resources.items()}, 
+                    'hourly_gains': {k: round(v, 1) for k,v in p.get_hourly_net_gains(self.hourly_production_rates).items()}
+                }
             return json.dumps(state)
 
     def run_tick_loop(self):
