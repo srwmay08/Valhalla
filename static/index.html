@@ -23,21 +23,20 @@
 
     <div id="info-prompt" class="hidden"></div>
 
-    <div id="tooltip" class.hidden"></div>
+    <div id="tooltip" class="hidden"></div>
 
     <div id="event-log-container">
         <h4>Event Log</h4>
         <ul id="event-log"></ul>
     </div>
     
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
-            }
-        }
-    </script>
+    <!-- New Debug Panel -->
+    <div id="debug-panel">
+        <h4>Front-End Debug</h4>
+        <div id="debug-content">
+            <p>Loading...</p>
+        </div>
+    </div>
     
     <script type="module" src="main.js"></script>
 </body>

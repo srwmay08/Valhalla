@@ -127,10 +127,6 @@ canvas#bg {
     font-size: 12px;
     flex-grow: 1;
 }
-#event-log li {
-    padding: 2px 0;
-    border-bottom: 1px solid #222;
-}
 #tooltip {
     position: absolute;
     padding: 5px 10px;
@@ -145,3 +141,31 @@ canvas#bg {
     display: none;
 }
 
+/* Styles for the new debug panel */
+#debug-panel {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 280px;
+    background: rgba(10, 20, 10, 0.85);
+    color: #00ff00; /* Classic debug green */
+    border: 1px solid #00ff00;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 12px;
+    z-index: 20;
+    line-height: 1.4;
+}
+#debug-panel h4 {
+    margin: 0 0 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #005500;
+    font-family: sans-serif;
+    font-size: 14px;
+    text-align: center;
+    color: #aaffaa;
+}
+#debug-content p {
+    margin: 5px 0;
+}
