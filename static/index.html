@@ -2,24 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- Crucial for mobile responsiveness -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Biome Sphere</title>
+    <title>Valhalla Game</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="status-display">
         <h2>Game Status: <span id="game-state">Connecting...</span></h2>
         <h3>Player 1 Resources</h3>
-        <pre id="player-resources"></pre>
+        <div id="player-resources" class="resource-grid"></div>
+        <h3>Income (/hr)</h3>
+        <div id="player-income" class="resource-grid"></div>
     </div>
-
     <canvas id="bg"></canvas>
-
-    <div id="info-box" class="hidden">
-        <h2 id="info-prompt"></h2>
+    <div id="info-prompt" class="hidden"></div>
+    <div id="tooltip" class="hidden"></div>
+    <div id="event-log-container">
+        <h4>Event Log</h4>
+        <ul id="event-log"></ul>
     </div>
-    
     <script type="importmap">
         {
             "imports": {
@@ -28,7 +29,6 @@
             }
         }
     </script>
-    
     <script type="module" src="main.js"></script>
 </body>
 </html>
