@@ -116,12 +116,11 @@ class IcosahedronSphere:
                 self.face_biomes[i] = "Coast"
 
 class GameEngine:
-    """Manages the overall game state, players, and game logic ticks."""
     def __init__(self):
         self.lock = threading.RLock()
         self.state_changed_cv = threading.Condition(self.lock)
         self.state_version = 0
-        self.sphere = IcosahedronSphere(subdivisions=4)
+        self.sphere = IcosahedronSphere(subdivisions=5) # Increased from 4
         self.num_faces = len(self.sphere.faces)
         self.players = []
         self.player_colors = {}
@@ -130,7 +129,7 @@ class GameEngine:
         self.countdown_end_time = None
         self.last_tick_time = time.time()
         self.hourly_production_rates = {"Alchemy": 45, "Peasant": 2.7, "Farm": 80, "Dock": 35, "Lumberyard": 50, "Tower": 25, "Wizard Guild": 5, "Ore Mine": 60, "Diamond Mine": 15, "FoodConsumption": 0.25}
-    
+
     def add_event(self, message):
         timestamp = time.strftime("%H:%M:%S")
         self.event_log.insert(0, f"[{timestamp}] {message}")
@@ -239,12 +238,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith('/api/gamestate'):
             query_components = parse_qs(urlparse(self.path).query); client_version = int(query_components.get('version', [0])[0])
             with game_engine.state_changed_cv:
-                if game_engine.state_version == client_version: game_engine.state_changed_cv.wait(timeout=25.0)
+                if game_engine.state_version == client_version:
+                    game_engine.state_changed_cv.wait(timeout=25.0)
             try:
-                self.send_response(200); self.send_header('Content-type', 'application/json'); self.end_headers()
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
                 self.wfile.write(game_engine.get_state_json().encode('utf-8'))
             except ConnectionAbortedError:
-                print("Client disconnected during long poll.")
+                # This error happens when a user refreshes the page, it's safe to ignore.
+                print("Client disconnected during long poll. (ConnectionAbortedError)")
         else:
             super().do_GET()
     def do_POST(self):

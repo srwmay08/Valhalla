@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const SUBDIVISIONS = 4;
+const SUBDIVISIONS = 5; // Increased from 4 to match the server
 const BIOMES = {"Plain": new THREE.Color(0x7CFC00), "Mountain": new THREE.Color(0x8B8989), "Hill": new THREE.Color(0xBDB76B),"Cavern": new THREE.Color(0x483D8B), "Water": new THREE.Color(0x4169E1), "Forest": new THREE.Color(0x228B22),"Swamp": new THREE.Color(0x2F4F4F), "Coast": new THREE.Color(0xEED5B7), "Ocean": new THREE.Color(0x00008B)};
 const PLAYER_COLORS = [new THREE.Color(0xff0000), new THREE.Color(0x0000ff), new THREE.Color(0x00ffff), new THREE.Color(0xffff00)];
 
@@ -92,25 +92,41 @@ function updateVisuals(state) {
     sphere.geometry.attributes.color.needsUpdate = true;
 }
 
-function formatResource(name, value) {
-    return `<span><span class="resource-name">${name}</span><span class="resource-value">${value}</span></span>`;
-}
-
 function updateHud(state) {
     const stateEl = document.getElementById('game-state-hud');
-    const resourcesEl = document.getElementById('hud-resources');
-    const incomeEl = document.getElementById('hud-income');
+    const resourceDisplayEl = document.getElementById('hud-resource-display');
     const eventLogEl = document.getElementById('event-log');
     const promptEl = document.getElementById('info-prompt');
     const tickCountdownEl = document.getElementById('next-tick-countdown');
     const tickLabelEl = document.getElementById('next-tick-label');
 
     if (stateEl) stateEl.textContent = `(${state.state})`;
+
     const player1 = state.players['Player 1'];
-    if (player1) {
-        if (resourcesEl) resourcesEl.innerHTML = Object.entries(player1.resources).map(([name, value]) => formatResource(name, value)).join('');
-        if (incomeEl) incomeEl.innerHTML = Object.entries(player1.hourly_gains).map(([name, value]) => formatResource(name, value >= 0 ? `+${value}` : value)).join('');
+    if (player1 && resourceDisplayEl) {
+        const resourceOrder = ['Platinum', 'Food', 'Lumber', 'Mana', 'Ore', 'Gems', 'Research Points', 'Peasants', 'Draftees'];
+        let newHtml = '';
+
+        for (const resourceName of resourceOrder) {
+            if (player1.resources[resourceName] !== undefined) {
+                const currentAmount = player1.resources[resourceName];
+                const gainAmount = player1.hourly_gains[resourceName] || 0;
+                
+                const gainSign = gainAmount > 0 ? '+' : ''; // No sign for 0 or negative
+                const gainClass = gainAmount > 0 ? 'positive-gain' : (gainAmount < 0 ? 'negative-gain' : '');
+
+                newHtml += `
+                    <span>
+                        <span class="resource-name">${resourceName}</span>
+                        <span class="resource-value">${currentAmount}</span>
+                        <span class="resource-gain ${gainClass}">${gainSign}${gainAmount}</span>
+                    </span>
+                `;
+            }
+        }
+        resourceDisplayEl.innerHTML = newHtml;
     }
+
     if (promptEl) {
         if (state.state === 'SETUP') {
             promptEl.classList.remove('hidden');
@@ -123,17 +139,20 @@ function updateHud(state) {
             promptEl.classList.add('hidden');
         }
     }
+
     if (eventLogEl && state.event_log) {
         const logHTML = state.event_log.map(msg => `<li>${msg}</li>`).join('');
         if (eventLogEl.innerHTML !== logHTML) eventLogEl.innerHTML = logHTML;
     }
+
     if (tickCountdownEl && tickLabelEl) {
         if (state.state === 'RUNNING' && state.last_tick_time && state.tick_interval) {
             const nextTickTime = state.last_tick_time + state.tick_interval;
             const remaining = Math.max(0, nextTickTime - (Date.now() / 1000));
-            const minutes = Math.floor(remaining / 60).toString().padStart(2, '0');
+            const minutes = Math.floor((remaining / 60) % 60).toString().padStart(2, '0');
             const seconds = Math.floor(remaining % 60).toString().padStart(2, '0');
-            tickCountdownEl.textContent = `${minutes}:${seconds}`;
+            const hours = Math.floor(remaining / 3600);
+            tickCountdownEl.textContent = `${hours}:${minutes}:${seconds}`;
             tickLabelEl.style.display = 'block';
             tickCountdownEl.style.display = 'block';
         } else {
@@ -157,12 +176,15 @@ function onMouseMove(event) {
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObject(sphere);
+
     if (intersects.length > 0) {
         const faceIndex = Math.floor(intersects[0].face.a / 3);
         let ownerName = "Neutral";
         const ownerEntry = Object.entries(gameState.players || {}).find(([, p]) => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
         if (ownerEntry) ownerName = ownerEntry[0];
-        tooltipEl.textContent = `Territory: ${faceIndex} | Owner: ${ownerName}`;
+        
+        // Restore Biome information to the tooltip
+        tooltipEl.textContent = `Territory: ${faceIndex} | Biome: ${gameState.faces ? gameState.faces[faceIndex] : "N/A"} | Owner: ${ownerName}`;
         tooltipEl.style.left = `${event.clientX + 15}px`;
         tooltipEl.style.top = `${event.clientY}px`;
         tooltipEl.classList.remove('hidden');
@@ -173,24 +195,29 @@ function onMouseMove(event) {
 
 async function onMouseUp(event) {
     tooltipEl.classList.add('hidden');
+    // Simplified logic: ignore clicks if it was a drag or if the game state hasn't loaded yet.
     if (isDragging || !gameState.state) return;
+
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObject(sphere);
+
     if (intersects.length > 0) {
         const faceIndex = Math.floor(intersects[0].face.a / 3);
+        // During SETUP or COUNTDOWN, a click always attempts to start/re-start the game.
         if (gameState.state === 'SETUP' || gameState.state === 'COUNTDOWN') {
-            const isOwnedByOther = Object.values(gameState.players).some(p => p.is_ai && p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
-            if (isOwnedByOther) { alert("This territory is already claimed by an AI."); return; }
             await fetch('/api/startgame', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faceIndex: faceIndex }) });
-        } else if (gameState.state === 'RUNNING') {
+        } 
+        // During RUNNING, a click attempts an attack.
+        else if (gameState.state === 'RUNNING') {
             const player1 = gameState.players['Player 1'];
             if (!player1) return;
             const playerOwnedFaces = new Set(player1.owned_faces.map(f => f % gameState.num_faces));
             const isOwnedByAnyone = Object.values(gameState.players).some(p => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
             const neighbors = gameState.neighbors[faceIndex] || [];
             const isAdjacent = neighbors.some(n => playerOwnedFaces.has(n));
+            
             if (!isOwnedByAnyone && isAdjacent) {
                 if (confirm(`Attack neutral territory ${faceIndex}?`)) {
                     const response = await fetch('/api/attack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faceIndex: faceIndex }) });
