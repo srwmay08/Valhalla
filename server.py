@@ -129,11 +129,32 @@ class IcosahedronSphere:
             if len(faces_set) == 2: f1, f2 = tuple(faces_set); neighbors[f1].add(f2); neighbors[f2].add(f1)
         return {i: list(n_set) for i, n_set in neighbors.items()}
     def _generate_world(self):
-        num_faces = len(self.faces); self.tiles = [{"type": None, "scales": {"life_death": 0, "heat_cold": 0, "exertion_torpor": 0, "magic_drain": 0, "order_chaos": 0, "luck_woe": 0}, "latitude": np.mean([self.vertices[v_idx][1] for v_idx in self.faces[i]])} for i in range(num_faces)]; self._generate_oceans(num_faces); self._populate_landmass(num_faces)
-        tile_counts = {};
+        num_faces = len(self.faces)
+        self.tiles = [{"type": None, "scales": {"life_death": 0, "heat_cold": 0, "exertion_torpor": 0, "magic_drain": 0, "order_chaos": 0, "luck_woe": 0}, "latitude": np.mean([self.vertices[v_idx][1] for v_idx in self.faces[i]])} for i in range(num_faces)]
+        self._generate_oceans(num_faces)
+        self._populate_landmass(num_faces)
+        
+        tile_counts = {}
         for tile in self.tiles:
-            tile_type = tile["type"]; tile_counts[tile_type] = tile_counts.get(tile_type, 0) + 1
+            tile_type = tile["type"]
+            tile_counts[tile_type] = tile_counts.get(tile_type, 0) + 1
+        
+        # --- DEBUG LOGIC AS REQUESTED ---
+        print("\n--- SERVER DEBUG START ---")
         print("World generation complete. Tile counts:", tile_counts)
+        
+        total_tiles = len(self.tiles)
+        print(f"Total Territory IDs generated: {total_tiles} (IDs from 0 to {total_tiles - 1})")
+        
+        calculated_total_from_counts = sum(tile_counts.values())
+        print(f"Sum of all tile type counts: {calculated_total_from_counts}")
+        
+        if total_tiles == calculated_total_from_counts:
+            print("SUCCESS: Total territory count perfectly matches the sum of individual tile types.")
+        else:
+            print("ERROR: MISMATCH! Total territory count does NOT match the sum of tile types!")
+        print("--- SERVER DEBUG END ---\n")
+        
     def _populate_landmass(self, num_faces):
         land_indices = [i for i, tile in enumerate(self.tiles) if tile["type"] is None]
         for i in land_indices:
@@ -165,7 +186,7 @@ class GameEngine:
         self.lock = threading.RLock()
         self.state_changed_cv = threading.Condition(self.lock)
         self.state_version = 0
-        self.sphere = IcosahedronSphere(subdivisions=8) # Increased from 5
+        self.sphere = IcosahedronSphere(subdivisions=5)
         self.num_faces = len(self.sphere.tiles)
         self.players, self.player_colors, self.event_log = [], {}, []
         self.game_state, self.countdown_end_time = 'SETUP', None

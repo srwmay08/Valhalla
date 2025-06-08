@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const SUBDIVISIONS = 8; // Increased from 5 to match the server
+const SUBDIVISIONS = 5;
 const TILE_COLORS = {
     "Deep Sea": new THREE.Color(0x000055), "Sea": new THREE.Color(0x4169E1),
     "Plain": new THREE.Color(0x7CFC00), "Mountain": new THREE.Color(0x8B8989), 
@@ -16,7 +16,7 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#bg'), antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
-camera.position.setZ(2.5);
+camera.position.setZ(5);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -28,6 +28,7 @@ const mouse = new THREE.Vector2();
 let mouseDownPos = new THREE.Vector2();
 let isDragging = false;
 let stateVersion = 0;
+let lastHoveredFaceIndex = -1; // CORRECT DECLARATION OF THE VARIABLE
 
 function init() {
     tooltipEl = document.getElementById("tooltip");
@@ -157,6 +158,12 @@ function onMouseMove(event) {
     raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObject(sphere);
     if (intersects.length > 0) {
         const faceIndex = Math.floor(intersects[0].face.a / 3);
+
+        if (faceIndex !== lastHoveredFaceIndex) {
+            console.log(`Territory ID: ${faceIndex}`);
+            lastHoveredFaceIndex = faceIndex;
+        }
+
         let ownerName = "Neutral";
         const ownerEntry = Object.entries(gameState.players || {}).find(([, p]) => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
         if (ownerEntry) ownerName = ownerEntry[0];
@@ -168,7 +175,10 @@ function onMouseMove(event) {
         tooltipEl.textContent = tooltipText;
         tooltipEl.style.left = `${event.clientX + 15}px`; tooltipEl.style.top = `${event.clientY}px`;
         tooltipEl.classList.remove('hidden');
-    } else { tooltipEl.classList.add('hidden'); }
+    } else {
+        tooltipEl.classList.add('hidden');
+        lastHoveredFaceIndex = -1;
+    }
 }
 
 async function onMouseUp(event) {
