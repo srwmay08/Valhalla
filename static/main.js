@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const SUBDIVISIONS = 12; // Increased from 5 to match the server
+const SUBDIVISIONS = 8; // Increased from 5 to match the server
 const TILE_COLORS = {
     "Deep Sea": new THREE.Color(0x000055), "Sea": new THREE.Color(0x4169E1),
     "Plain": new THREE.Color(0x7CFC00), "Mountain": new THREE.Color(0x8B8989), 

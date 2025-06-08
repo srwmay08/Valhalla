@@ -165,7 +165,7 @@ class GameEngine:
         self.lock = threading.RLock()
         self.state_changed_cv = threading.Condition(self.lock)
         self.state_version = 0
-        self.sphere = IcosahedronSphere(subdivisions=12) # Increased from 5
+        self.sphere = IcosahedronSphere(subdivisions=8) # Increased from 5
         self.num_faces = len(self.sphere.tiles)
         self.players, self.player_colors, self.event_log = [], {}, []
         self.game_state, self.countdown_end_time = 'SETUP', None
