@@ -6,16 +6,26 @@ Configuration file for the game engine and world generation settings.
 # --- World Generation: General ---
 # Number of oceans on the surface.
 SURFACE_OCEANS = 4
+
 # Number of separate seas in the subterranean layer.
 SUBTERRANEAN_SEAS = 15
+
+# --- World Generation: Geography ---
+# RENAMED: For clarity, these now specify they are for the surface
+MIN_SURFACE_DEEP_SEA_PERCENT = 0.20
+MAX_SURFACE_DEEP_SEA_PERCENT = 0.40
+# NEW: Configuration for Subterranean Sea coverage
+MIN_SUBTERRANEAN_SEA_PERCENT = 0.05
+MAX_SUBTERRANEAN_SEA_PERCENT = 0.15
+
+# --- World Generation: Lava River Generation ---
 # If True, generates long "rivers" of lava. If False, generates round "seas" of lava.
 LAVA_RIVERS = True
 # How many lava rivers to generate if LAVA_RIVERS is True.
 NUM_LAVA_RIVERS = 25
-
-# --- World Generation: Geography ---
-MIN_DEEP_SEA_PERCENT = 0.20
-MAX_DEEP_SEA_PERCENT = 0.40
+# Lava River length
+LAVA_RIVERS_MIN_LENGTH = 15
+LAVA_RIVERS_MAX_LENGTH = 35
 
 # --- World Generation: Terrain Spawn Chances ---
 SPAWN_CHANCE_WASTE = 0.03

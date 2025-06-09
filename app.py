@@ -3,10 +3,11 @@ import math
 import random
 import os
 from collections import deque
-from config import (TERRAIN_COLORS, SCALES, MIN_DEEP_SEA_PERCENT, 
-                    MAX_DEEP_SEA_PERCENT, SPAWN_CHANCE_WASTE, SPAWN_CHANCE_FARM, 
+from config import (TERRAIN_COLORS, SCALES, MIN_SURFACE_DEEP_SEA_PERCENT, MAX_SURFACE_DEEP_SEA_PERCENT, 
+                    MIN_SUBTERRANEAN_SEA_PERCENT, MAX_SUBTERRANEAN_SEA_PERCENT,
+                    SPAWN_CHANCE_WASTE, SPAWN_CHANCE_FARM, 
                     SPAWN_CHANCE_CAVERN, SURFACE_OCEANS, SUBTERRANEAN_SEAS, 
-                    LAVA_RIVERS, NUM_LAVA_RIVERS, 
+                    LAVA_RIVERS, NUM_LAVA_RIVERS, LAVA_RIVERS_MAX_LENGTH, LAVA_RIVERS_MIN_LENGTH,
                     MOUNTAIN_RANGE_MIN_LENGTH, MOUNTAIN_RANGE_MAX_LENGTH)
 
 # --- App Setup and Sphere Generation (Unchanged) ---
@@ -62,109 +63,118 @@ def generate_world_data():
     neighbors_map = find_all_neighbors(base_faces)
     world_data.update({"vertices": base_vertices, "faces": base_faces, "neighbors": neighbors_map})
     num_tiles = len(base_faces)
-    
-    # Initialize tiles with the new 'has_cavern' property
-    world_data["tiles"] = [{
-        "surface_id": i, "subterranean_id": i + num_tiles,
-        "surface_terrain": None, "subterranean_terrain": None,
-        "has_cavern": False, # NEW PROPERTY
-        "scales": {s: 0 for s in SCALES}
-    } for i in range(num_tiles)]
+    world_data["tiles"] = [{"surface_id": i,"subterranean_id": i + num_tiles,"surface_terrain": None,"subterranean_terrain": None, "has_cavern": False,"scales": {s: 0 for s in SCALES}} for i in range(num_tiles)]
 
-    # === Surface Generation (Unchanged) ===
-    # ... (This logic is correct and does not need to be changed)
-    available_surface_tiles=set(range(num_tiles));surface_ocean_tiles=set();deep_sea_percentage=random.uniform(MIN_DEEP_SEA_PERCENT,MAX_DEEP_SEA_PERCENT)
-    if SURFACE_OCEANS>0:
-        ocean_size=int((deep_sea_percentage/SURFACE_OCEANS)*num_tiles)
+    # === Surface and Subterranean Generation (Unchanged) ===
+    # (All the logic for creating surface and subterranean terrains remains the same)
+    available_surface_tiles = set(range(num_tiles));surface_ocean_tiles = set();deep_sea_percentage = random.uniform(MIN_SURFACE_DEEP_SEA_PERCENT, MAX_SURFACE_DEEP_SEA_PERCENT)
+    if SURFACE_OCEANS > 0:
+        ocean_size = int((deep_sea_percentage / SURFACE_OCEANS) * num_tiles)
         for _ in range(SURFACE_OCEANS):
-            if not available_surface_tiles:break
-            seed=random.choice(list(available_surface_tiles));new_ocean=grow_body(seed,ocean_size,surface_ocean_tiles,neighbors_map);surface_ocean_tiles.update(new_ocean);available_surface_tiles-=new_ocean
-    for i in surface_ocean_tiles:world_data["tiles"][i]["surface_terrain"]="Deep Sea"
-    sea_indices=set()
+            if not available_surface_tiles: break
+            seed = random.choice(list(available_surface_tiles)); new_ocean = grow_body(seed, ocean_size, surface_ocean_tiles, neighbors_map); surface_ocean_tiles.update(new_ocean); available_surface_tiles -= new_ocean
+    for i in surface_ocean_tiles: world_data["tiles"][i]["surface_terrain"] = "Deep Sea"
+    sea_indices = set()
     for i in surface_ocean_tiles:
         for neighbor_id in neighbors_map[i]:
-            if neighbor_id not in surface_ocean_tiles:sea_indices.add(neighbor_id)
+            if neighbor_id not in surface_ocean_tiles: sea_indices.add(neighbor_id)
     for i in sea_indices:
-        if i in available_surface_tiles:world_data["tiles"][i]["surface_terrain"]="Sea";available_surface_tiles.remove(i)
-    land_indices=list(available_surface_tiles)
-    for i in land_indices:world_data["tiles"][i]["surface_terrain"]="Plain"
+        if i in available_surface_tiles: world_data["tiles"][i]["surface_terrain"] = "Sea"; available_surface_tiles.remove(i)
+    land_indices = list(available_surface_tiles)
+    for i in land_indices: world_data["tiles"][i]["surface_terrain"]="Plain"
     for i in land_indices:
-        if random.random()<0.25:world_data["tiles"][i]["surface_terrain"]="Hill"
-        elif random.random()<0.15:world_data["tiles"][i]["surface_terrain"]="Swamp"
-    for _ in range(int(len(land_indices)*0.01)):
-        seed,cluster_size=random.choice(land_indices),random.randint(5,20);q,visited=deque([seed]),{seed};
+        if random.random()<0.25: world_data["tiles"][i]["surface_terrain"]="Hill"
+        elif random.random()<0.15: world_data["tiles"][i]["surface_terrain"]="Swamp"
+    for _ in range(int(len(land_indices) * 0.01)):
+        seed, cluster_size = random.choice(land_indices), random.randint(5, 20); q, visited = deque([seed]), {seed};
         for _ in range(cluster_size):
-            if not q:break
-            curr=q.popleft();world_data["tiles"][curr]["surface_terrain"]="Forest"
+            if not q: break
+            curr = q.popleft(); world_data["tiles"][curr]["surface_terrain"] = "Forest"
             for n in neighbors_map[curr]:
-                if n in land_indices and n not in visited:q.append(n);visited.add(n)
-    for _ in range(int(len(land_indices)*0.005)):
-        seed,range_len=random.choice(land_indices),random.randint(MOUNTAIN_RANGE_MIN_LENGTH,MOUNTAIN_RANGE_MAX_LENGTH)
+                if n in land_indices and n not in visited: q.append(n); visited.add(n)
+    for _ in range(int(len(land_indices) * 0.005)):
+        range_len = random.randint(MOUNTAIN_RANGE_MIN_LENGTH, MOUNTAIN_RANGE_MAX_LENGTH); seed = random.choice(land_indices);
         for _ in range(range_len):
-            if seed not in land_indices:break
-            world_data["tiles"][seed]["surface_terrain"]="Mountain";valid=[n for n in neighbors_map[seed] if n in land_indices];seed=random.choice(valid) if valid else-1
+            if seed not in land_indices: break
+            world_data["tiles"][seed]["surface_terrain"] = "Mountain"; valid = [n for n in neighbors_map[seed] if n in land_indices]; seed = random.choice(valid) if valid else -1
     for i in land_indices:
-        if world_data["tiles"][i]["surface_terrain"]!="Mountain" and random.random()<SPAWN_CHANCE_WASTE:world_data["tiles"][i]["surface_terrain"]="Waste"
-        is_near_plain=any(world_data["tiles"][n]["surface_terrain"]=="Plain" for n in neighbors_map[i]);
-        if is_near_plain and random.random()<SPAWN_CHANCE_FARM:world_data["tiles"][i]["surface_terrain"]="Farm"
-
-    # === Subterranean Generation (Unchanged) ===
-    # ... (This logic is correct and does not need to be changed)
-    available_sub_tiles=set(range(num_tiles))
-    if SUBTERRANEAN_SEAS>0:
-        sub_sea_size=int(num_tiles*0.10/SUBTERRANEAN_SEAS)
+        if world_data["tiles"][i]["surface_terrain"] != "Mountain" and random.random() < SPAWN_CHANCE_WASTE: world_data["tiles"][i]["surface_terrain"] = "Waste"
+        is_near_plain = any(world_data["tiles"][n]["surface_terrain"] == "Plain" for n in neighbors_map[i]);
+        if is_near_plain and random.random() < SPAWN_CHANCE_FARM: world_data["tiles"][i]["surface_terrain"] = "Farm"
+    available_sub_tiles = set(range(num_tiles)); sub_sea_percentage = random.uniform(MIN_SUBTERRANEAN_SEA_PERCENT, MAX_SUBTERRANEAN_SEA_PERCENT)
+    if SUBTERRANEAN_SEAS > 0:
+        sub_sea_size = int((sub_sea_percentage * num_tiles) / SUBTERRANEAN_SEAS)
         for _ in range(SUBTERRANEAN_SEAS):
-            if not available_sub_tiles:break
-            seed=random.choice(list(available_sub_tiles));new_sea=grow_body(seed,sub_sea_size,set(range(num_tiles))-available_sub_tiles,neighbors_map)
+            if not available_sub_tiles: break
+            seed = random.choice(list(available_sub_tiles)); new_sea = grow_body(seed, sub_sea_size, set(range(num_tiles)) - available_sub_tiles, neighbors_map)
             for i in new_sea:
-                if i in available_sub_tiles:world_data["tiles"][i]["subterranean_terrain"]="Sea";available_sub_tiles.remove(i)
-    occupied_sub_tiles=set(range(num_tiles))-available_sub_tiles
+                if i in available_sub_tiles: world_data["tiles"][i]["subterranean_terrain"] = "Sea"; available_sub_tiles.remove(i)
+    occupied_sub_tiles = set(range(num_tiles)) - available_sub_tiles
     if LAVA_RIVERS:
         for _ in range(NUM_LAVA_RIVERS):
-            if not available_sub_tiles:break
-            seed=random.choice(list(available_sub_tiles));river=generate_lava_river(seed,random.randint(30,80),occupied_sub_tiles,neighbors_map)
+            if not available_sub_tiles: break
+            seed = random.choice(list(available_sub_tiles)); river_length = random.randint(LAVA_RIVERS_MIN_LENGTH, LAVA_RIVERS_MAX_LENGTH); river = generate_lava_river(seed, river_length, occupied_sub_tiles, neighbors_map)
             for i in river:
-                if i in available_sub_tiles:world_data["tiles"][i]["subterranean_terrain"]="Lava";available_sub_tiles.remove(i)
+                if i in available_sub_tiles: world_data["tiles"][i]["subterranean_terrain"] = "Lava"; available_sub_tiles.remove(i)
     else:
         if available_sub_tiles:
-            lava_sea_size=int(num_tiles*0.15/5)
+            lava_sea_size = int(num_tiles * 0.15 / 5)
             for _ in range(5):
-                if not available_sub_tiles:break
-                seed=random.choice(list(available_sub_tiles));new_lava_sea=grow_body(seed,lava_sea_size,set(range(num_tiles))-available_sub_tiles,neighbors_map)
+                if not available_sub_tiles: break
+                seed = random.choice(list(available_sub_tiles)); new_lava_sea = grow_body(seed, lava_sea_size, set(range(num_tiles)) - available_sub_tiles, neighbors_map)
                 for i in new_lava_sea:
-                    if i in available_sub_tiles:world_data["tiles"][i]["subterranean_terrain"]="Lava";available_sub_tiles.remove(i)
-    sub_terrain_choices=["Mountain"]*40+["Hill"]*40+["Waste"]*20
-    for i in list(available_sub_tiles):world_data["tiles"][i]["subterranean_terrain"]=random.choice(sub_terrain_choices)
+                    if i in available_sub_tiles: world_data["tiles"][i]["subterranean_terrain"] = "Lava"; available_sub_tiles.remove(i)
+    sub_terrain_choices = ["Mountain"]*40 + ["Hill"]*40 + ["Waste"]*20
+    for i in list(available_sub_tiles): world_data["tiles"][i]["subterranean_terrain"] = random.choice(sub_terrain_choices)
 
+    # === Step 3: Cavern Generation Pass (NEW LOGIC) ===
+    
+    # A set of tiles that are too close to an existing cavern to be allowed to become one.
+    ineligible_for_caverns = set()
+    
+    # Shuffle the tile indices to ensure a random distribution.
+    potential_cavern_indices = list(range(num_tiles))
+    random.shuffle(potential_cavern_indices)
 
-    # === Step 3: Cavern Generation Pass (UPDATED LOGIC) ===
-    # Instead of overwriting terrain, this pass now sets a boolean flag.
-    for i in range(num_tiles):
+    for i in potential_cavern_indices:
+        # If this tile is already in an exclusion zone, skip it.
+        if i in ineligible_for_caverns:
+            continue
+
+        # Roll the dice to see if a cavern should spawn here.
         if random.random() < SPAWN_CHANCE_CAVERN:
+            # Success! Place the cavern.
             world_data["tiles"][i]["has_cavern"] = True
+            
+            # Now, create a 5-tile exclusion zone around the new cavern.
+            # We use a Breadth-First Search (BFS) to find all tiles within 5 steps.
+            exclusion_zone = {i}
+            queue = deque([(i, 0)]) # (tile_index, distance)
+            visited = {i}
 
-# --- API Routes ---
+            while queue:
+                current_tile, distance = queue.popleft()
+                
+                # If we are within the radius, add neighbors to the search.
+                if distance < 5:
+                    for neighbor in neighbors_map[current_tile]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            exclusion_zone.add(neighbor)
+                            queue.append((neighbor, distance + 1))
+            
+            # Add all tiles in the zone to the main ineligible set.
+            ineligible_for_caverns.update(exclusion_zone)
+
+
+# --- API Routes (Unchanged) ---
 @app.route('/')
 def index(): return render_template('index.html')
 
 @app.route('/api/world_data')
 def get_world_data():
     if not world_data["tiles"] or not any(t["surface_terrain"] for t in world_data["tiles"]): generate_world_data()
-    
-    # Update the data sent to the client to include the 'has_cavern' flag
-    client_safe_data = [{
-        "surface_id": t["surface_id"], "subterranean_id": t["subterranean_id"],
-        "surface_terrain": t["surface_terrain"], "subterranean_terrain": t["subterranean_terrain"],
-        "has_cavern": t["has_cavern"], # NEW
-        "surface_color": TERRAIN_COLORS.get(t["surface_terrain"], 0xffffff),
-        "subterranean_color": TERRAIN_COLORS.get(t["subterranean_terrain"], 0xffffff),
-        "scales": t["scales"]
-    } for t in world_data["tiles"]]
-    
-    return jsonify({
-        "tiles": client_safe_data,
-        "vertices": world_data["vertices"],
-        "faces": world_data["faces"]
-    })
+    client_safe_data=[{"surface_id":t["surface_id"],"subterranean_id":t["subterranean_id"],"surface_terrain":t["surface_terrain"],"subterranean_terrain":t["subterranean_terrain"],"has_cavern":t["has_cavern"],"surface_color":TERRAIN_COLORS.get(t["surface_terrain"],0xffffff),"subterranean_color":TERRAIN_COLORS.get(t["subterranean_terrain"],0xffffff),"scales":t["scales"]} for t in world_data["tiles"]]
+    return jsonify({"tiles":client_safe_data,"vertices":world_data["vertices"],"faces":world_data["faces"]})
 
 if __name__ == '__main__': app.run(debug=True)
