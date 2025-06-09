@@ -16,7 +16,21 @@
             color: white;
             font-family: monospace;
             border-radius: 5px;
-            display: none; /* Hidden by default */
+            display: none;
+        }
+        /* NEW: Style for the toggle button */
+        #view-toggle {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -24,9 +38,10 @@
     <div id="info"></div>
     <div id="container"></div>
 
+    <button id="view-toggle">View Subterranean</button>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
     <script src="/static/js/main.js"></script>
 </body>
 </html>
