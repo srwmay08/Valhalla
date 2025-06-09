@@ -49,7 +49,6 @@ TERRAIN_COLORS = {
     "Waste": 0xDEB887,
     "Farm": 0xFFD700,
     "Lava": 0xFC470A,
-    "Cavern": 0x4B0082,
     # A default color for any unhandled cases
     "None": 0xff00ff, # Bright pink for debugging
 }
