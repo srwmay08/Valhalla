@@ -26,7 +26,7 @@ function init() {
     canvas = document.querySelector('#bg');
     ctx = canvas.getContext('2d');
     tooltipEl = document.getElementById("tooltip");
-    debugPanel = document.getElementById("debug-content"); // Get the debug panel
+    debugPanel = document.getElementById("debug-content");
 
     pickingCanvas = document.createElement('canvas');
     pickingCtx = pickingCanvas.getContext('2d');
@@ -34,8 +34,9 @@ function init() {
     resizeCanvas();
     setupEventListeners();
     
+    // Start the animation loop and the state fetching loop
+    animate();
     fetchGameState();
-    requestAnimationFrame(animate);
 }
 
 function setupEventListeners() {
@@ -52,34 +53,38 @@ function resizeCanvas() {
     canvas.height = window.innerHeight;
     pickingCanvas.width = canvas.width;
     pickingCanvas.height = canvas.height;
+    needsRedraw = true;
 }
 
 // --- Game State, HUD, and Debug ---
 async function fetchGameState() {
-    try {
-        const response = await fetch(`/api/gamestate?version=${stateVersion}`);
-        if (response.status === 304) { /* Not Modified */ } 
-        else if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        else {
-            const newState = await response.json();
-            if (newState.version !== stateVersion) {
-                gameState = newState;
-                stateVersion = newState.version;
-                updateHud(gameState);
-                updateDebugInfo(); // Update debug on new state
-                needsRedraw = true;
+    // This function now runs in a continuous, stable loop.
+    while (true) {
+        try {
+            const response = await fetch(`/api/gamestate?version=${stateVersion}`);
+            if (response.status === 200) {
+                const newState = await response.json();
+                if (newState.version !== stateVersion) {
+                    gameState = newState;
+                    stateVersion = newState.version;
+                    needsRedraw = true; // Flag that we have new data to draw
+                }
+            } else if (response.status !== 304) { // 304 is Not Modified, which is fine
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            // If the request was successful (200 or 304), we continue to the next iteration.
+        } catch (e) {
+            console.error("Fetch error, will retry in 5s:", e);
+            // On error, wait 5 seconds before trying again.
+            await new Promise(resolve => setTimeout(resolve, 5000));
         }
-    } catch (e) {
-        console.error("Fetch error, will retry in 5s:", e);
-        await new Promise(resolve => setTimeout(resolve, 5000));
     }
-    fetchGameState();
 }
 
 function updateDebugInfo() {
-    if (!debugPanel || !gameState.tiles || !gameState.faces) {
-        debugPanel.innerHTML = "<p>Waiting for game state...</p>";
+    if (!debugPanel) return;
+    if (!gameState.tiles) {
+        debugPanel.innerHTML = "<p>Loading Game State...</p>";
         return;
     }
 
@@ -87,20 +92,20 @@ function updateDebugInfo() {
     const totalFaces = gameState.faces.length;
     const territoryMatch = totalTerritories === totalFaces;
 
-    let html = `<p>Territory-Tile Match: ${territoryMatch 
+    let html = `<p>Territory Match: ${territoryMatch 
         ? '<span style="color: #7CFC00;">OK</span>' 
         : '<span style="color: #ff4d4d;">MISMATCH</span>'}</p>`;
-    html += `<p>Total Territories (Tiles): ${totalTerritories}</p>`;
-    html += `<p>Total Triangles (Faces): ${totalFaces}</p>`;
-    html += `<p>Visible Triangles (Rendered): ${renderedTriangleCount}</p>`;
+    html += `<p>Total Territories: ${totalTerritories}</p>`;
+    html += `<p>Visible Triangles: ${renderedTriangleCount}</p>`;
     
     debugPanel.innerHTML = html;
 }
 
 function formatResource(name, value) { return `<span><span class="resource-name">${name}</span><span class="resource-value">${value}</span></span>`; }
-function formatGain(name, value) { const sign = value >= 0 ? '+' : ''; const gainClass = value >= 0 ? 'positive-gain' : 'negative-gain'; return `<span><span class="resource-name">${name}</span><span class="resource-gain ${gainClass}">${sign}${value}</span></span>`; }
 
 function updateHud(state) {
+    if (!state.state) return; // Don't update HUD if state is not loaded
+
     const hudResourceDisplay = document.getElementById('hud-resource-display');
     if (hudResourceDisplay) {
         const player1 = state.players ? state.players['Player 1'] : null;
@@ -154,12 +159,14 @@ function updateHud(state) {
 // --- Rendering Logic ---
 function animate() {
     requestAnimationFrame(animate);
-    if (gameState.state === 'COUNTDOWN' || gameState.state === 'RUNNING') {
-        updateHud(gameState);
-    }
+
+    // Always update informational panels
+    updateHud(gameState);
+    updateDebugInfo();
+
+    // Only redraw the expensive 3D globe when it needs it
     if (needsRedraw && gameState.vertices) {
-        drawSphere(ctx, false); // This will now update renderedTriangleCount
-        updateDebugInfo(); // Update debug info after a redraw
+        drawSphere(ctx, false);
         needsRedraw = false;
     }
 }
@@ -186,10 +193,11 @@ function drawSphere(context, isPicking) {
     const facesToDraw = [];
     for (let i = 0; i < faces.length; i++) {
         const [i1, i2, i3] = faces[i];
+        if(!projectedVertices[i1] || !projectedVertices[i2] || !projectedVertices[i3]) continue;
         const v1 = projectedVertices[i1], v2 = projectedVertices[i2], v3 = projectedVertices[i3];
         const normalZ = (v2.x - v1.x) * (v3.y - v1.y) - (v2.y - v1.y) * (v3.x - v1.x);
         
-        if (normalZ > 0) {
+        if (normalZ < 0) {
             facesToDraw.push({ index: i, vertices: [v1, v2, v3], depth: (v1.z + v2.z + v3.z) / 3 });
         }
     }
@@ -220,9 +228,14 @@ function drawSphere(context, isPicking) {
             context.fillStyle = `rgb(${r},${g},${b})`;
             context.fill();
         } else {
-            context.fillStyle = faceOwners[index] !== undefined 
-                ? PLAYER_COLORS[faceOwners[index]] 
-                : (TILE_COLORS[tiles[index].type] || TILE_COLORS.Default);
+            const ownerIndex = faceOwners[index];
+            let color;
+            if (ownerIndex !== undefined && ownerIndex < PLAYER_COLORS.length) {
+                color = PLAYER_COLORS[ownerIndex];
+            } else {
+                color = (tiles && tiles[index]) ? (TILE_COLORS[tiles[index].type] || TILE_COLORS.Default) : TILE_COLORS.Default;
+            }
+            context.fillStyle = color;
             context.strokeStyle = '#000';
             context.lineWidth = 0.5;
             context.fill();
@@ -262,7 +275,7 @@ function onMouseMove(e) {
         needsRedraw = true;
     } else {
         const faceIndex = getFaceIndexFromCoordinates(e.clientX, e.clientY);
-        if (faceIndex !== -1 && faceIndex < gameState.tiles.length) {
+        if (faceIndex !== -1 && gameState.tiles && faceIndex < gameState.tiles.length) {
             if (faceIndex !== lastHoveredFaceIndex) {
                 lastHoveredFaceIndex = faceIndex;
             }
@@ -300,15 +313,16 @@ async function onMouseUp(e) {
         if (!player1) return;
         const playerOwnedFaces = new Set(player1.owned_faces.map(f => f % gameState.num_faces));
         const isOwnedByAnyone = Object.values(gameState.players).some(p => p.owned_faces.some(f => f % gameState.num_faces === faceIndex));
-        const neighbors = gameState.neighbors[faceIndex] || [];
+        const neighbors = gameState.neighbors ? gameState.neighbors[faceIndex] || [] : [];
         const isAdjacent = neighbors.some(n => playerOwnedFaces.has(n));
         
         if (!isOwnedByAnyone && isAdjacent) {
-            if (confirm(`Attack neutral territory ${faceIndex}?`)) {
+            // Using a custom modal instead of confirm()
+            showModal(`Attack neutral territory ${faceIndex}?`, async () => {
                 const response = await fetch('/api/attack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ faceIndex }) });
                 const attackResult = await response.json();
-                alert(attackResult.result === 'won' ? `You won the battle for tile ${faceIndex}!` : `Your attack on tile ${faceIndex} failed!`);
-            }
+                showModal(attackResult.result === 'won' ? `You won the battle for tile ${faceIndex}!` : `Your attack on tile ${faceIndex} failed!`);
+            });
         }
     }
 }
@@ -318,6 +332,51 @@ function onWheel(e) {
     zoom -= e.deltaY * 0.005;
     zoom = Math.max(1, Math.min(10, zoom));
     needsRedraw = true;
+}
+
+// --- Utility: Custom Modal for Alerts/Confirms ---
+function showModal(message, onConfirm) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('custom-modal');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'custom-modal';
+    modal.style.position = 'fixed';
+    modal.style.left = '50%';
+    modal.style.top = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.padding = '20px';
+    modal.style.background = 'rgba(0, 0, 0, 0.9)';
+    modal.style.border = '1px solid #ffd700';
+    modal.style.borderRadius = '8px';
+    modal.style.color = '#fff';
+    modal.style.zIndex = '1000';
+    modal.style.textAlign = 'center';
+
+    const messageP = document.createElement('p');
+    messageP.textContent = message;
+    messageP.style.marginBottom = '20px';
+    modal.appendChild(messageP);
+
+    if (onConfirm) { // This is a confirmation dialog
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Confirm';
+        confirmBtn.onclick = () => { onConfirm(); modal.remove(); };
+        modal.appendChild(confirmBtn);
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.marginLeft = '10px';
+        cancelBtn.onclick = () => modal.remove();
+        modal.appendChild(cancelBtn);
+    } else { // This is just an alert
+        const okBtn = document.createElement('button');
+        okBtn.textContent = 'OK';
+        okBtn.onclick = () => modal.remove();
+        modal.appendChild(okBtn);
+    }
+    document.body.appendChild(modal);
 }
 
 init();
