@@ -1,7 +1,7 @@
-// --- Setup Scene, Camera, and Renderer (same as before) ---
+// --- Setup Scene, Camera, and Renderer ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('container').appendChild(renderer.domElement);
 
@@ -16,12 +16,15 @@ camera.position.z = 3;
 
 // --- Variables for interactivity ---
 let sphereMesh;
-let worldData; // To store our world data locally
+let wireframeMesh;
+let worldData;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let lastHoveredFaceIndex = null;
 const infoDiv = document.getElementById('info');
 
+// --- NEW: Define a highlight color for easy access ---
+const HIGHLIGHT_COLOR = new THREE.Color(0xffff00); // Bright yellow
 
 // --- Fetch and Create the Sphere ---
 fetch('/api/world_data')
@@ -29,31 +32,21 @@ fetch('/api/world_data')
     .then(data => {
         worldData = data;
         const geometry = new THREE.BufferGeometry();
-        
+
         const vertices = new Float32Array(data.vertices.flat());
         const indices = new Uint32Array(data.faces.flat());
 
         geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         geometry.setIndex(new THREE.BufferAttribute(indices, 1));
         
-        const colors = [];
+        // --- Set initial vertex colors based on terrain ---
+        const vertexColors = new Float32Array(data.vertices.length * 3);
         const color = new THREE.Color();
         data.tiles.forEach(tile => {
             color.setHex(tile.color);
-            const face = data.faces[tile.id];
-            // Since we are setting vertex colors, and a face has 3 vertices,
-            // we need to set the color for each vertex of the face.
-            // This approach is simple but less efficient than per-face coloring in shaders.
-            // For now, we set the same color for all 3 vertices of a face.
-        });
-
-        // We need a color attribute for each vertex, not each face.
-        const vertexColors = new Float32Array(data.vertices.length * 3);
-        data.tiles.forEach(tile => {
-            color.setHex(tile.color);
-            const faceVertices = data.faces[tile.id];
-            faceVertices.forEach(vertexIndex => {
-                vertexColors[vertexIndex * 3] = color.r;
+            const faceVertexIndices = data.faces[tile.id];
+            faceVertexIndices.forEach(vertexIndex => {
+                vertexColors[vertexIndex * 3]     = color.r;
                 vertexColors[vertexIndex * 3 + 1] = color.g;
                 vertexColors[vertexIndex * 3 + 2] = color.b;
             });
@@ -64,13 +57,40 @@ fetch('/api/world_data')
 
         const material = new THREE.MeshPhongMaterial({
             side: THREE.DoubleSide,
-            vertexColors: true, 
+            vertexColors: true,
             shininess: 10
         });
 
         sphereMesh = new THREE.Mesh(geometry, material);
         scene.add(sphereMesh);
+
+        const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
+        wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        scene.add(wireframeMesh);
     });
+
+// --- NEW: Helper function to change the color of a face ---
+function setFaceColor(faceIndex, color) {
+    if (!sphereMesh || !worldData) return;
+
+    const geometry = sphereMesh.geometry;
+    const colorAttribute = geometry.attributes.color;
+    
+    // Get the three vertex indices for the given face
+    const vertexIndexA = geometry.index.getX(faceIndex * 3);
+    const vertexIndexB = geometry.index.getY(faceIndex * 3);
+    const vertexIndexC = geometry.index.getZ(faceIndex * 3);
+
+    // Apply the new color to each vertex of the face
+    colorAttribute.setXYZ(vertexIndexA, color.r, color.g, color.b);
+    colorAttribute.setXYZ(vertexIndexB, color.r, color.g, color.b);
+    colorAttribute.setXYZ(vertexIndexC, color.r, color.g, color.b);
+
+    // Tell Three.js that the color attribute needs to be updated
+    colorAttribute.needsUpdate = true;
+}
+
 
 // --- Event Listeners ---
 window.addEventListener('mousemove', onMouseMove);
@@ -88,15 +108,24 @@ function onMouseMove(event) {
     const intersects = raycaster.intersectObject(sphereMesh);
 
     if (intersects.length > 0) {
-        // --- THIS IS THE FIX ---
-        // Use `faceIndex` directly from the intersection object.
-        const faceIndex = intersects[0].faceIndex; 
+        const faceIndex = intersects[0].faceIndex;
 
+        // --- UPDATED: Hover logic ---
         if (faceIndex !== lastHoveredFaceIndex) {
+            // If we were hovering over a different tile before, revert its color
+            if (lastHoveredFaceIndex !== null) {
+                const originalColor = new THREE.Color(worldData.tiles[lastHoveredFaceIndex].color);
+                setFaceColor(lastHoveredFaceIndex, originalColor);
+            }
+
+            // Highlight the new tile
+            setFaceColor(faceIndex, HIGHLIGHT_COLOR);
+
+            // Update state and info panel
             lastHoveredFaceIndex = faceIndex;
-            const tile = worldData.tiles[faceIndex]; // This will now be correct
+            const tile = worldData.tiles[faceIndex];
             
-            if (tile) { // Add a check to be safe
+            if (tile) {
                 infoDiv.style.display = 'block';
                 infoDiv.style.left = `${event.clientX + 10}px`;
                 infoDiv.style.top = `${event.clientY + 10}px`;
@@ -110,17 +139,23 @@ function onMouseMove(event) {
             }
         }
     } else {
+        // --- UPDATED: Mouse out logic ---
+        // If we moved the mouse off the sphere, revert the last highlighted tile
+        if (lastHoveredFaceIndex !== null) {
+            const originalColor = new THREE.Color(worldData.tiles[lastHoveredFaceIndex].color);
+            setFaceColor(lastHoveredFaceIndex, originalColor);
+        }
+
         infoDiv.style.display = 'none';
         lastHoveredFaceIndex = null;
     }
 }
 
 function onMouseClick(event) {
-    // The `lastHoveredFaceIndex` is already correctly set by onMouseMove, so this function works with the fix.
-    if (!sphereMesh || lastHoveredFaceIndex === null) return;
+    if (lastHoveredFaceIndex === null) return;
     
     const tile = worldData.tiles[lastHoveredFaceIndex];
-    if (tile) { // Add a check to be safe
+    if (tile) {
         alert(`You clicked on TILE ID: ${tile.id} (${tile.terrain})`);
     }
 }
