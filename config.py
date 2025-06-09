@@ -3,11 +3,15 @@
 Configuration file for the game engine and world generation settings.
 """
 
-# --- Game Timing ---
-GAME_SETUP_COUNTDOWN = 15
-SECONDS_BETWEEN_TICKS = 10
-YEAR_DURATION_TICKS = 120
-SUBSEASON_DURATION_TICKS = 10
+# --- World Generation: General ---
+# Number of oceans on the surface.
+SURFACE_OCEANS = 4
+# Number of separate seas in the subterranean layer.
+SUBTERRANEAN_SEAS = 15
+# If True, generates long "rivers" of lava. If False, generates round "seas" of lava.
+LAVA_RIVERS = True
+# How many lava rivers to generate if LAVA_RIVERS is True.
+NUM_LAVA_RIVERS = 25
 
 # --- World Generation: Geography ---
 MIN_DEEP_SEA_PERCENT = 0.20
@@ -17,6 +21,10 @@ MAX_DEEP_SEA_PERCENT = 0.40
 SPAWN_CHANCE_WASTE = 0.03
 SPAWN_CHANCE_FARM = 0.02
 SPAWN_CHANCE_CAVERN = 0.005 # 0.5% chance for a cavern
+
+# --- Mountain Ranges ---
+MOUNTAIN_RANGE_MIN_LENGTH = 8
+MOUNTAIN_RANGE_MAX_LENGTH = 22
 
 # --- Player and Game Setup ---
 MAX_PLAYERS = 4

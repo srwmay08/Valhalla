@@ -42,10 +42,8 @@ fetch('/api/world_data')
         worldData = data;
         const geometry = new THREE.BufferGeometry();
         const positions = [];
-        // The colors array will be populated by the updateSphereColors function later.
         const colors = new Float32Array(data.tiles.length * 3 * 3);
 
-        // Create the un-indexed geometry for flat coloring.
         for (const tile of data.tiles) {
             const faceVertexIndices = data.faces[tile.surface_id];
             const v1 = data.vertices[faceVertexIndices[0]], v2 = data.vertices[faceVertexIndices[1]], v3 = data.vertices[faceVertexIndices[2]];
@@ -55,11 +53,15 @@ fetch('/api/world_data')
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
         
-        // Color the sphere with surface terrains by default on first load.
+        const material = new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, vertexColors: true, shininess: 10 });
+
+        // --- FIX: Create the sphereMesh object BEFORE trying to color it. ---
+        sphereMesh = new THREE.Mesh(geometry, material);
+        
+        // Now that sphereMesh exists, we can safely call updateSphereColors to apply the initial surface colors.
         updateSphereColors(false); 
 
-        const material = new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, vertexColors: true, shininess: 10 });
-        sphereMesh = new THREE.Mesh(geometry, material);
+        // Add the fully colored sphere to the scene.
         scene.add(sphereMesh);
         
         // Add the black wireframe borders.
@@ -86,14 +88,16 @@ fetch('/api/world_data')
 
 // --- Core Functions ---
 
+/**
+ * Rewrites the entire color buffer of the sphere based on camera position.
+ * @param {boolean} isInside - True if the camera is inside the sphere, false otherwise.
+ */
 function updateSphereColors(isInside) {
-    """Rewrites the entire color buffer of the sphere based on camera position."""
     if (!sphereMesh || !worldData) return;
     const color = new THREE.Color();
     const colorAttribute = sphereMesh.geometry.attributes.color;
 
     worldData.tiles.forEach((tile, index) => {
-        // Choose which color to display based on whether we are inside or outside.
         const colorHex = isInside ? tile.subterranean_color : tile.surface_color;
         color.setHex(colorHex);
         colorAttribute.setXYZ(index * 3, color.r, color.g, color.b);
@@ -103,8 +107,12 @@ function updateSphereColors(isInside) {
     colorAttribute.needsUpdate = true; // Crucial: tells Three.js to apply the changes.
 }
 
+/**
+ * Helper function to change the color of a single face for highlighting.
+ * @param {number} faceIndex - The index of the face to color.
+ * @param {THREE.Color} color - The color to apply to the face.
+ */
 function setFaceColor(faceIndex, color) {
-    """Helper function to change the color of a single face for highlighting."""
     if (!sphereMesh) return;
     const colorAttribute = sphereMesh.geometry.attributes.color;
     colorAttribute.setXYZ(faceIndex * 3, color.r, color.g, color.b);
@@ -125,7 +133,6 @@ function onMouseMove(event) {
     // Revert the previously hovered tile before doing anything else.
     if (lastHoveredFaceIndex !== null) {
         const tile = worldData.tiles[lastHoveredFaceIndex];
-        // Revert to the correct color based on the current camera view.
         const originalColorHex = isCameraInside ? tile.subterranean_color : tile.surface_color;
         setFaceColor(lastHoveredFaceIndex, new THREE.Color(originalColorHex));
         lastHoveredFaceIndex = null;
@@ -143,7 +150,6 @@ function onMouseMove(event) {
         let shouldHighlight = false;
         let highlightColor, idToShow, terrainToShow;
 
-        // Determine which side was hit and if the camera is in the right place.
         if (isCameraInside && dotProduct > 0) { // Inside view, hit an inner face
             shouldHighlight = true;
             highlightColor = SUBTERRANEAN_HIGHLIGHT_COLOR;
