@@ -1,36 +1,48 @@
-# srwmay08/valhalla/Valhalla-ab1992c87ec95d522d735b22aa531c67f43eb590/config.py
+# srwmay08/valhalla/Valhalla-24c911620633cb0231a51e29ba4d4676b3c305ed/config.py
 """
-Configuration file for the game engine settings.
+Configuration file for the game engine and world generation settings.
 """
 
 # --- Game Timing ---
-# GAME_SETUP_COUNTDOWN: The number of seconds the countdown lasts after a player chooses a start tile.
 GAME_SETUP_COUNTDOWN = 15
+SECONDS_BETWEEN_TICKS = 10
+YEAR_DURATION_TICKS = 120
+SUBSEASON_DURATION_TICKS = 10
 
-# SECONDS_BETWEEN_TICKS: How often resources are generated once the game is running.
-SECONDS_BETWEEN_TICKS = 10 # Set to 1 hour (3600 seconds) as per game description
+# --- World Generation: Geography ---
+# Percentage of the map to be covered by Deep Sea
+MIN_DEEP_SEA_PERCENT = 0.20  # 20%
+MAX_DEEP_SEA_PERCENT = 0.40  # 40%
+
+# --- World Generation: Terrain Spawn Chances ---
+# Note: These are base chances and can be adjusted by logic.
+SPAWN_CHANCE_WASTE = 0.03
+SPAWN_CHANCE_FARM = 0.02
+INLAND_SEA_SPREAD_CHANCE = 0.10
 
 # --- Player and Game Setup ---
-# Starting resources for each player
-STARTING_RESOURCES = {
-    "Platinum": 1000,
-    "Food": 500,
-    "Lumber": 500,
-    "Mana": 100,
-    "Ore": 100,
-    "Gems": 10,
-    "Research Points": 0,
-    "Draftees": 50,
-    "Peasants": 100
-}
-
-# Maximum number of players and AI in a game session
 MAX_PLAYERS = 4
-
-# Colors to assign to players for visualization on the sphere
+STARTING_RESOURCES = {
+    "Platinum": 1000, "Food": 500, "Lumber": 500, "Mana": 100,
+    "Ore": 100, "Gems": 10, "Research Points": 0, "Draftees": 50, "Peasants": 100
+}
 PLAYER_COLORS = [
-    (255, 0, 0),     # Red
-    (0, 0, 255),     # Blue
-    (0, 255, 255),   # Cyan
-    (255, 255, 0)    # Yellow
+    (255, 0, 0), (0, 0, 255), (0, 255, 255), (255, 255, 0)
 ]
+
+# --- World Scales ---
+# Define names for the scales for easy reference
+SCALES = ["Life/Death", "Heat/Cold", "Exertion/Torpor", "Magic/Drain", "Order/Chaos", "Luck/Woe"]
+
+# --- Terrain Colors for Visualization ---
+TERRAIN_COLORS = {
+    "Deep Sea": 0x000033,
+    "Sea": 0x00008B,
+    "Plain": 0x90EE90,
+    "Hill": 0x8B4513,
+    "Forest": 0x006400,
+    "Mountain": 0x808080,
+    "Swamp": 0x556B2F,
+    "Waste": 0xDEB887,
+    "Farm": 0xFFD700,
+}
