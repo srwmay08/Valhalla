@@ -1,40 +1,31 @@
 // --- Scene Setup ---
-// These are the fundamental components of a Three.js application.
-const scene = new THREE.Scene(); // The container for all 3D objects.
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000); // The viewpoint.
-const renderer = new THREE.WebGLRenderer({ antialias: true }); // The engine that draws the scene onto the screen.
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('container').appendChild(renderer.domElement);
 
 // --- Controls ---
-// OrbitControls allow the user to rotate (orbit), pan, and zoom the camera with the mouse.
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; // Creates a smoother, decelerating motion.
+controls.enableDamping = true;
 
 // --- Lighting ---
-// Ambient light provides a soft, baseline illumination for the entire scene.
 const ambientLight = new THREE.AmbientLight(0x404040, 2);
 scene.add(ambientLight);
-// Directional light simulates a distant light source like the sun.
 const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 directionalLight.position.set(5, 3, 5);
-camera.add(directionalLight); // Attach the light to the camera for static lighting.
-camera.position.z = 3; // Initial camera position.
+camera.add(directionalLight);
+camera.position.z = 3;
 
 // --- State and Interaction Variables ---
-let sphereMesh, wireframeMesh, worldData; // To hold our main 3D objects and fetched data.
-const raycaster = new THREE.Raycaster(); // Used to detect mouse intersections with objects.
-const mouse = new THREE.Vector2(); // Stores the mouse's 2D coordinates.
-let lastHoveredFaceIndex = null; // To track the previously hovered tile.
-const infoDiv = document.getElementById('info'); // The HTML element for the info panel.
-const SURFACE_HIGHLIGHT_COLOR = new THREE.Color(0xffff00); // Yellow
-const SUBTERRANEAN_HIGHLIGHT_COLOR = new THREE.Color(0xff4500); // OrangeRed
-
-// This state variable tracks which view is active.
-// 'false' for Surface view, 'true' for Subterranean view.
-let isSubterraneanView = false; 
-
-// Get a reference to the toggle button from the HTML.
+let sphereMesh, wireframeMesh, worldData;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let lastHoveredFaceIndex = null;
+const infoDiv = document.getElementById('info');
+const SURFACE_HIGHLIGHT_COLOR = new THREE.Color(0xffff00);
+const SUBTERRANEAN_HIGHLIGHT_COLOR = new THREE.Color(0xff4500);
+let isSubterraneanView = false;
 const viewToggleButton = document.getElementById('view-toggle');
 
 // --- Data Fetching and Sphere Creation ---
@@ -43,33 +34,47 @@ fetch('/api/world_data')
     .then(data => {
         worldData = data;
         const geometry = new THREE.BufferGeometry();
+        
+        // --- FIX: Create fully populated position and color arrays BEFORE creating the mesh ---
         const positions = [];
-        const colors = new Float32Array(data.tiles.length * 3 * 3);
+        const colors = []; // Use a standard array to build the data
+        const color = new THREE.Color();
 
+        // 1. Loop through tiles to build the arrays completely.
         for (const tile of data.tiles) {
             const faceVertexIndices = data.faces[tile.surface_id];
             const v1 = data.vertices[faceVertexIndices[0]], v2 = data.vertices[faceVertexIndices[1]], v3 = data.vertices[faceVertexIndices[2]];
+            
+            // Add vertex positions for this face.
             positions.push(...v1, ...v2, ...v3);
+
+            // Add the initial SURFACE color for all 3 vertices of this face.
+            color.setHex(tile.surface_color);
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
         }
-        
+
+        // 2. Set the geometry attributes with the fully prepared data.
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
         
-        // Initially color the sphere with surface terrains.
-        updateSphereColors(false); 
-
+        // 3. Create the material and the final mesh object.
         const material = new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, vertexColors: true, shininess: 10 });
         sphereMesh = new THREE.Mesh(geometry, material);
+        
+        // 4. Now that the sphere is fully created and colored, add it to the scene.
         scene.add(sphereMesh);
         
+        // 5. Add wireframe and cavern markers.
         const wireframeGeometry = new THREE.WireframeGeometry(geometry);
         const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
         wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
         scene.add(wireframeMesh);
         
         const cavernMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-        for (const tile of data.tiles) {
+        for (const tile of data.files) {
             if (tile.has_cavern) {
                 const faceVertexIndices = data.faces[tile.surface_id];
                 const vA=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[0]]); const vB=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[1]]); const vC=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[2]]);
@@ -85,11 +90,7 @@ fetch('/api/world_data')
     });
 
 // --- Core Functions ---
-
-/**
- * Rewrites the entire color buffer of the sphere based on the current view state.
- * @param {boolean} isSubView - True to show subterranean colors, false for surface.
- */
+// This function is now only used for swapping views, not for initialization.
 function updateSphereColors(isSubView) {
     if (!sphereMesh || !worldData) return;
     const color = new THREE.Color();
@@ -105,9 +106,6 @@ function updateSphereColors(isSubView) {
     colorAttribute.needsUpdate = true;
 }
 
-/**
- * Helper function to change the color of a single face for highlighting.
- */
 function setFaceColor(faceIndex, color) {
     if (!sphereMesh) return;
     const colorAttribute = sphereMesh.geometry.attributes.color;
@@ -117,8 +115,7 @@ function setFaceColor(faceIndex, color) {
     colorAttribute.needsUpdate = true;
 }
 
-// --- Event Handlers ---
-
+// --- Event Handlers (Unchanged) ---
 function onMouseMove(event) {
     if (!sphereMesh || !worldData) return;
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -126,7 +123,6 @@ function onMouseMove(event) {
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObject(sphereMesh);
 
-    // Revert the previously hovered tile before doing anything else.
     if (lastHoveredFaceIndex !== null) {
         const tile = worldData.tiles[lastHoveredFaceIndex];
         const originalColorHex = isSubterraneanView ? tile.subterranean_color : tile.surface_color;
@@ -139,10 +135,8 @@ function onMouseMove(event) {
         const intersection = intersects[0];
         const faceIndex = Math.floor(intersection.face.a / 3);
         const tile = worldData.tiles[faceIndex];
-        
         let highlightColor, idToShow, terrainToShow;
 
-        // The logic is now much simpler: it only depends on the toggle state, not the camera.
         if (isSubterraneanView) {
             highlightColor = SUBTERRANEAN_HIGHLIGHT_COLOR;
             idToShow = `SUBTERRANEAN ID: ${tile.subterranean_id}`;
@@ -155,7 +149,6 @@ function onMouseMove(event) {
         
         setFaceColor(faceIndex, highlightColor);
         lastHoveredFaceIndex = faceIndex;
-
         infoDiv.style.display = 'block';
         infoDiv.style.left = `${event.clientX + 10}px`;
         infoDiv.style.top = `${event.clientY + 10}px`;
@@ -186,7 +179,6 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
-    // No more camera state checking needed in the animation loop.
     renderer.render(scene, camera);
 }
 
@@ -195,17 +187,10 @@ window.addEventListener('mousemove', onMouseMove);
 window.addEventListener('click', onMouseClick);
 window.addEventListener('resize', onWindowResize);
 
-// Logic for the Toggle Button
 viewToggleButton.addEventListener('click', () => {
-    // Flip the state
     isSubterraneanView = !isSubterraneanView;
-    
-    // Update the button text
     viewToggleButton.innerText = isSubterraneanView ? 'View Surface' : 'View Subterranean';
-    
-    // Trigger the color swap for the entire sphere
     updateSphereColors(isSubterraneanView);
 });
 
-// Start the animation loop
 animate();
