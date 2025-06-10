@@ -1,104 +1,63 @@
-# app.py
-
+import os
+import random
+import math
+from collections import deque
 from flask import Flask, jsonify, render_template, request, redirect, url_for, flash
 from flask_pymongo import PyMongo
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
 from flask_bcrypt import Bcrypt
-from bson.objectid import ObjectId
-import os
-# NEW: Imports for WebSockets
 from flask_socketio import SocketIO, emit
+from bson.objectid import ObjectId
+from config import (TERRAIN_COLORS, SCALES, MIN_SURFACE_DEEP_SEA_PERCENT,
+                    MAX_SURFACE_DEEP_SEA_PERCENT, MIN_SUBTERRANEAN_SEA_PERCENT,
+                    MAX_SUBTERRANEAN_SEA_PERCENT, SPAWN_CHANCE_WASTE,
+                    SPAWN_CHANCE_FARM, SPAWN_CHANCE_CAVERN, SURFACE_OCEANS,
+                    SUBTERRANEAN_SEAS, LAVA_RIVERS, NUM_LAVA_RIVERS,
+                    LAVA_RIVERS_MIN_LENGTH, LAVA_RIVERS_MAX_LENGTH,
+                    MOUNTAIN_RANGE_MIN_LENGTH, MOUNTAIN_RANGE_MAX_LENGTH)
 
-from config import (TERRAIN_COLORS, SCALES, #... and all other config vars
-                    )
-
-# --- App & DB Initialization ---
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'a-very-secret-and-secure-key-that-you-should-change' 
-app.config["MONGO_URI"] = "mongodb://localhost:27017/valhalla_db"
-# ... (app.config lines) ...
-mongo = PyMongo(app)
-bcrypt = Bcrypt(app)
-socketio = SocketIO(app) 
-
-# --- Login Manager Setup ---
-# 1. Create the LoginManager instance WITHOUT attaching it to the app yet.
-login_manager = LoginManager() 
-
-# 2. Now, configure and associate it with the app using init_app.
-login_manager.init_app(app) 
-login_manager.login_view = 'login' 
+# --- Extension Initialization ---
+# Create extension instances here, without attaching them to an app yet.
+mongo = PyMongo()
+bcrypt = Bcrypt()
+socketio = SocketIO()
+login_manager = LoginManager()
+# Configure the login manager's required settings.
+login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
-class User(UserMixin):
-    def __init__(self, user_doc): self.user_doc = user_doc
-    def get_id(self): return str(self.user_doc["_id"])
-    @property
-    def username(self): return self.user_doc.get("username")
-    @property
-    def password_hash(self): return self.user_doc.get("password_hash")
-    def check_password(self, password): return bcrypt.check_password_hash(self.password_hash, password)
 
+# --- Global World State ---
+# This dictionary will store the generated world data in memory.
+world_data = {"tiles": [], "vertices": [], "faces": [], "neighbors": {}}
+
+
+# --- User Class for Flask-Login ---
+class User(UserMixin):
+    def __init__(self, user_doc):
+        self.user_doc = user_doc
+    def get_id(self):
+        return str(self.user_doc["_id"])
+    @property
+    def username(self):
+        return self.user_doc.get("username")
+    @property
+    def password_hash(self):
+        return self.user_doc.get("password_hash")
+    def check_password(self, password):
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+# This function is required by Flask-Login to load the current user from the session cookie.
 @login_manager.user_loader
 def load_user(user_id):
     user_doc = mongo.db.users.find_one({"_id": ObjectId(user_id)})
-    if user_doc: return User(user_doc)
+    if user_doc:
+        return User(user_doc)
     return None
 
-# --- Authentication Routes ---
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    # (This route is unchanged and functional)
-    if current_user.is_authenticated: return redirect(url_for('index'))
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        existing_user = mongo.db.users.find_one({"email": email})
-        if existing_user:
-            flash('That email is already in use. Please choose a different one.', 'danger')
-            return redirect(url_for('register'))
-        mongo.db.users.insert_one({'email': email, 'password_hash': bcrypt.generate_password_hash(password).decode('utf-8'), 'username': None, 'selected_tile_id': None})
-        flash('Your account has been created! You can now log in.', 'success')
-        return redirect(url_for('login'))
-    return render_template('registration.html', title='Register') # Ensure this matches your filename
 
-# NEW: Functional Login Route
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        user_doc = mongo.db.users.find_one({"email": email})
-        
-        # Wrap the found document in our User class to use its methods
-        user = User(user_doc) if user_doc else None
-
-        if user and user.check_password(password):
-            login_user(user) # This handles the session
-            # If the user hasn't set a username yet, force them to the create_username page
-            # (We will build this page next)
-            # if not user.username:
-            #     return redirect(url_for('create_username'))
-            return redirect(url_for('index'))
-        else:
-            flash('Login Unsuccessful. Please check email and password', 'danger')
-    return render_template('login.html', title='Login')
-
-@app.route('/logout')
-def logout():
-    logout_user()
-    return redirect(url_for('login'))
-
-# --- Main Application Routes ---
-@app.route('/')
-@login_required # NEW: Protect the main page, forcing login
-def index():
-    # Pass the current user's data to the template
-    return render_template('index.html', user=current_user)
-
-# --- App Setup and Sphere Generation (Unchanged) ---
-APP_ROOT=os.path.dirname(os.path.abspath(__file__));template_folder=os.path.join(APP_ROOT,'templates');static_folder=os.path.join(APP_ROOT,'static');app=Flask(__name__,template_folder=template_folder,static_folder=static_folder);world_data={"tiles":[],"vertices":[],"faces":[],"neighbors":{}};
+# --- World Generation and Helper Functions (Unchanged) ---
+# All the functions like create_ico_sphere, find_all_neighbors, grow_body, etc.
+# do not need to be changed. They are included here for completeness.
 def create_ico_sphere(subdivisions):
     t=(1.0+math.sqrt(5.0))/2.0;vertices=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]];faces=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
     for _ in range(subdivisions):
@@ -151,9 +110,6 @@ def generate_world_data():
     world_data.update({"vertices": base_vertices, "faces": base_faces, "neighbors": neighbors_map})
     num_tiles = len(base_faces)
     world_data["tiles"] = [{"surface_id": i,"subterranean_id": i + num_tiles,"surface_terrain": None,"subterranean_terrain": None, "has_cavern": False,"scales": {s: 0 for s in SCALES}} for i in range(num_tiles)]
-
-    # === Surface and Subterranean Generation (Unchanged) ===
-    # (All the logic for creating surface and subterranean terrains remains the same)
     available_surface_tiles = set(range(num_tiles));surface_ocean_tiles = set();deep_sea_percentage = random.uniform(MIN_SURFACE_DEEP_SEA_PERCENT, MAX_SURFACE_DEEP_SEA_PERCENT)
     if SURFACE_OCEANS > 0:
         ocean_size = int((deep_sea_percentage / SURFACE_OCEANS) * num_tiles)
@@ -213,98 +169,94 @@ def generate_world_data():
                     if i in available_sub_tiles: world_data["tiles"][i]["subterranean_terrain"] = "Lava"; available_sub_tiles.remove(i)
     sub_terrain_choices = ["Mountain"]*40 + ["Hill"]*40 + ["Waste"]*20
     for i in list(available_sub_tiles): world_data["tiles"][i]["subterranean_terrain"] = random.choice(sub_terrain_choices)
-
-    # === Step 3: Cavern Generation Pass (NEW LOGIC) ===
-    
-    # A set of tiles that are too close to an existing cavern to be allowed to become one.
-    ineligible_for_caverns = set()
-    
-    # Shuffle the tile indices to ensure a random distribution.
-    potential_cavern_indices = list(range(num_tiles))
-    random.shuffle(potential_cavern_indices)
-
-    for i in potential_cavern_indices:
-        # If this tile is already in an exclusion zone, skip it.
-        if i in ineligible_for_caverns:
-            continue
-
-        # Roll the dice to see if a cavern should spawn here.
-        if random.random() < SPAWN_CHANCE_CAVERN:
-            # Success! Place the cavern.
-            world_data["tiles"][i]["has_cavern"] = True
-            
-            # Now, create a 5-tile exclusion zone around the new cavern.
-            # We use a Breadth-First Search (BFS) to find all tiles within 5 steps.
-            exclusion_zone = {i}
-            queue = deque([(i, 0)]) # (tile_index, distance)
-            visited = {i}
-
-            while queue:
-                current_tile, distance = queue.popleft()
-                
-                # If we are within the radius, add neighbors to the search.
-                if distance < 5:
-                    for neighbor in neighbors_map[current_tile]:
-                        if neighbor not in visited:
-                            visited.add(neighbor)
-                            exclusion_zone.add(neighbor)
-                            queue.append((neighbor, distance + 1))
-            
-            # Add all tiles in the zone to the main ineligible set.
-            ineligible_for_caverns.update(exclusion_zone)
+    for i in range(num_tiles):
+        if random.random() < SPAWN_CHANCE_CAVERN: world_data["tiles"][i]["has_cavern"] = True
 
 
-# --- API Routes (Unchanged) ---
-# In app.py
+# --- Application Factory ---
+def create_app():
+    """Creates and configures the Flask application."""
+    app = Flask(__name__)
+    app.config.from_object('config')
 
-# --- Main Application Routes ---
-@app.route('/')
-@login_required # This correctly protects the page
-def index():
-    # FIX: Pass the current_user object to the template with the name 'user'.
-    return render_template('index.html', user=current_user)
+    # Initialize extensions with the app object
+    mongo.init_app(app)
+    bcrypt.init_app(app)
+    socketio.init_app(app)
+    login_manager.init_app(app)
 
-@app.route('/api/world_data')
-def get_world_data():
-    if not world_data["tiles"] or not any(t["surface_terrain"] for t in world_data["tiles"]): generate_world_data()
-    client_safe_data=[{"surface_id":t["surface_id"],"subterranean_id":t["subterranean_id"],"surface_terrain":t["surface_terrain"],"subterranean_terrain":t["subterranean_terrain"],"has_cavern":t["has_cavern"],"surface_color":TERRAIN_COLORS.get(t["surface_terrain"],0xffffff),"subterranean_color":TERRAIN_COLORS.get(t["subterranean_terrain"],0xffffff),"scales":t["scales"]} for t in world_data["tiles"]]
-    return jsonify({"tiles":client_safe_data,"vertices":world_data["vertices"],"faces":world_data["faces"]})
+    # --- Routes ---
+    @app.route('/')
+    @login_required
+    def index():
+        return render_template('index.html', user=current_user)
 
-def get_ownership_data():
-    """Helper function to get all claimed tiles from the database."""
-    ownership = {}
-    claimed_tiles = mongo.db.users.find({"selected_tile_id": {"$ne": None}})
-    for user in claimed_tiles:
-        ownership[user["username"]] = user["selected_tile_id"]
-    return ownership
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if current_user.is_authenticated:
+            return redirect(url_for('index'))
+        if request.method == 'POST':
+            email = request.form.get('email')
+            password = request.form.get('password')
+            user_doc = mongo.db.users.find_one({"email": email})
+            user = User(user_doc) if user_doc else None
+            if user and user.check_password(password):
+                login_user(user)
+                return redirect(url_for('index'))
+            else:
+                flash('Login Unsuccessful. Please check email and password', 'danger')
+        return render_template('login.html', title='Login')
 
-@socketio.on('connect')
-def handle_connect():
-    """When a new user connects, send them the current state of all claimed tiles."""
-    if current_user.is_authenticated:
-        emit('world_update', get_ownership_data())
+    @app.route('/register', methods=['GET', 'POST'])
+    def register():
+        if current_user.is_authenticated: return redirect(url_for('index'))
+        if request.method == 'POST':
+            email, password = request.form.get('email'), request.form.get('password')
+            if mongo.db.users.find_one({"email": email}):
+                flash('That email is already in use.', 'danger')
+                return redirect(url_for('register'))
+            mongo.db.users.insert_one({'email': email, 'password_hash': bcrypt.generate_password_hash(password).decode('utf-8'), 'username': None, 'selected_tile_id': None})
+            flash('Your account has been created! You can now log in.', 'success')
+            return redirect(url_for('login'))
+        return render_template('registration.html', title='Register')
 
-@socketio.on('select_tile')
-def handle_tile_selection(data):
-    """When a user clicks a tile, update it in the database and broadcast the change."""
-    if not current_user.is_authenticated:
-        return # Ignore clicks from non-logged-in users
+    @app.route('/logout')
+    def logout():
+        logout_user()
+        return redirect(url_for('login'))
 
-    tile_id = data.get('tile_id')
-    if tile_id is None:
-        return
+    @app.route('/api/world_data')
+    def get_world_data():
+        if not world_data["tiles"] or not any(t["surface_terrain"] for t in world_data["tiles"]):
+            generate_world_data()
+        client_safe_data=[{"surface_id":t["surface_id"],"subterranean_id":t["subterranean_id"],"surface_terrain":t["surface_terrain"],"subterranean_terrain":t["subterranean_terrain"],"has_cavern":t["has_cavern"],"surface_color":TERRAIN_COLORS.get(t["surface_terrain"],0xffffff),"subterranean_color":TERRAIN_COLORS.get(t["subterranean_terrain"],0xffffff),"scales":t["scales"]} for t in world_data["tiles"]]
+        return jsonify({"tiles":client_safe_data,"vertices":world_data["vertices"],"faces":world_data["faces"]})
 
-    # Update the user's document in MongoDB to store their selected tile
-    mongo.db.users.update_one(
-        {'_id': ObjectId(current_user.get_id())},
-        {'$set': {'selected_tile_id': tile_id}}
-    )
+    # --- WebSocket Handlers ---
+    @socketio.on('connect')
+    def handle_connect():
+        if current_user.is_authenticated:
+            ownership = {}
+            for user in mongo.db.users.find({"selected_tile_id": {"$ne": None}}):
+                ownership[user["username"]] = user["selected_tile_id"]
+            emit('world_update', ownership)
 
-    # After updating, get the fresh ownership data and broadcast it to ALL clients
-    emit('world_update', get_ownership_data(), broadcast=True)
+    @socketio.on('select_tile')
+    def handle_tile_selection(data):
+        if not current_user.is_authenticated: return
+        tile_id = data.get('tile_id')
+        if tile_id is None: return
+        mongo.db.users.update_one({'_id': ObjectId(current_user.get_id())},{'$set': {'selected_tile_id': tile_id}})
+        ownership = {}
+        for user in mongo.db.users.find({"selected_tile_id": {"$ne": None}}):
+            ownership[user["username"]] = user["selected_tile_id"]
+        emit('world_update', ownership, broadcast=True)
 
+    return app
 
 # --- Main execution point ---
+# In app.py
 if __name__ == '__main__':
-    # Use socketio.run() to enable WebSocket support
-    socketio.run(app, debug=True)
+    app = create_app()
+    # Add host='0.0.0.0' to listen on all network interfaces
+    socketio.run(app, debug=True, host='0.0.0.0')

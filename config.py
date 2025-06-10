@@ -2,6 +2,21 @@
 """
 Configuration file for the game engine and world generation settings.
 """
+import os # Recommended for accessing environment variables
+
+# --- Security and Authentication ---
+# This is required by Flask for session management, flashing messages, and security.
+# It should be a long, random, and secret string.
+SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'a-default-secret-key-for-development-only')
+
+# --- Google OAuth Credentials ---
+# These are obtained from the Google Cloud Console.
+# It's best practice to store these as environment variables, not directly in the code.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET')
+
+# --- MONGO DB
+MONGO_URI = "mongodb://localhost:27017/valhalla_db"
 
 # --- World Generation: General ---
 # Number of oceans on the surface.

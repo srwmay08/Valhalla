@@ -2,46 +2,62 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Icosphere</title>
     <style>
-        body { margin: 0; background-color: #00001a; }
+        /* NEW: Remove body margin and hide overflow to prevent scrollbars */
+        body { 
+            margin: 0;
+            overflow: hidden; 
+            background-color: #00001a;
+        }
         canvas { display: block; }
-        #info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.5);
-            color: white;
-            font-family: monospace;
-            border-radius: 5px;
-            display: none;
+        
+        /* NEW: Main container for the app */
+        #app-container {
+            position: relative; /* This is now the positioning context for child elements */
+            width: 100vw;
+            height: 100vh;
         }
-        /* NEW: Style for the toggle button */
-        #view-toggle {
+
+        /* The canvas is now a direct child of the container */
+        #container {
             position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 10px 20px;
-            font-size: 16px;
-            background-color: #333;
-            color: white;
-            border: 1px solid #555;
-            border-radius: 5px;
-            cursor: pointer;
+            top: 0;
+            left: 0;
         }
+
+        /* All UI elements are now positioned relative to the app-container */
+        .navbar, #info, #view-toggle {
+            position: absolute;
+        }
+        
+        /* (The rest of your styles for navbar, info, view-toggle, etc. are unchanged) */
+        .navbar { top: 0; left: 0; width: 100%; background: rgba(0,0,0,0.3); padding: 10px; text-align: right; box-sizing: border-box; }
+        .navbar a { color: white; padding: 10px 15px; text-decoration: none; font-family: sans-serif; }
+        .navbar span { color: #ccc; padding: 10px 15px; font-family: sans-serif; }
+        #info { top: 40px; left: 10px; padding: 10px; background-color: rgba(0,0,0,0.5); color: white; font-family: monospace; border-radius: 5px; display: none; }
+        #view-toggle { bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; font-size: 16px; background-color: #333; color: white; border: 1px solid #555; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div id="info"></div>
-    <div id="container"></div>
+    <div id="app-container">
+        <div class="navbar">
+            {% if current_user.is_authenticated %}
+                <span>Welcome, {{ user.username or user.email }}</span>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% else %}
+                <a href="{{ url_for('login') }}">Login</a>
+                <a href="{{ url_for('register') }}">Register</a>
+            {% endif %}
+        </div>
+        
+        <span id="username" style="display: none;">{{ user.username or 'Player' }}</span>
+        
+        <div id="info"></div>
+        <div id="container"></div> <button id="view-toggle">View Subterranean</button>
+    </div>
 
-    <span id="username" style="display: none;">{{ user.username or 'Player' }}</span>
-
-    <button id="view-toggle">View Subterranean</button>
-
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="/static/js/main.js"></script>

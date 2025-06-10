@@ -1,47 +1,14 @@
+// In static/js/main.js
+
 // --- Scene Setup ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.getElementById('container').appendChild(renderer.domElement);
-
-const playerUsername = document.getElementById('username').textContent; // Get current user's name
-const socket = io(); // NEW: Initialize connection to the server's WebSocket
-
-// NEW: Colors for player ownership
-const MY_TILE_COLOR = new THREE.Color(0x00FFFF); // Teal for my tile
-const OTHER_PLAYER_TILE_COLOR = new THREE.Color(0xFF0000); // Red for others' tiles
-
-// --- NEW: WebSocket Listeners ---
-
-// This listener waits for 'world_update' messages from the server
-socket.on('world_update', (ownershipData) => {
-    if (!worldData) return;
-
-    console.log("Received world update:", ownershipData);
-
-    // First, revert all tiles to their base terrain color to clear old selections
-    updateSphereColors(isSubterraneanView);
-
-    // Loop through the ownership data and color the claimed tiles
-    for (const username in ownershipData) {
-        const tileId = ownershipData[username];
-        if (username === playerUsername) {
-            setFaceColor(tileId, MY_TILE_COLOR);
-        } else {
-            setFaceColor(tileId, OTHER_PLAYER_TILE_COLOR);
-        }
-    }
-});
-
-
-
-
-// --- Controls ---
+// IMPORTANT: Append the renderer to the container inside our new app-container
+document.getElementById('app-container').appendChild(renderer.domElement); 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-
-// --- Lighting ---
 const ambientLight = new THREE.AmbientLight(0x404040, 2);
 scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
@@ -55,10 +22,63 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let lastHoveredFaceIndex = null;
 const infoDiv = document.getElementById('info');
+const viewToggleButton = document.getElementById('view-toggle');
+const playerUsername = document.getElementById('username').textContent;
+const socket = io();
+
 const SURFACE_HIGHLIGHT_COLOR = new THREE.Color(0xffff00);
 const SUBTERRANEAN_HIGHLIGHT_COLOR = new THREE.Color(0xff4500);
+const MY_TILE_COLOR = new THREE.Color(0x00FFFF);
+const OTHER_PLAYER_TILE_COLOR = new THREE.Color(0xFF0000);
+
 let isSubterraneanView = false;
-const viewToggleButton = document.getElementById('view-toggle');
+let tileOwnership = {}; // This will store which player owns which tile
+
+// --- WebSocket Listeners ---
+socket.on('world_update', (ownershipData) => {
+    if (!worldData) return;
+    tileOwnership = ownershipData;
+    updateAllTileColors();
+});
+
+// --- Core Functions ---
+
+function updateAllTileColors() {
+    if (!sphereMesh || !worldData) return;
+    const baseColors = worldData.tiles.map(tile => isSubterraneanView ? tile.subterranean_color : tile.surface_color);
+
+    for (const username in tileOwnership) {
+        const tileId = tileOwnership[username];
+        if (tileId !== null && tileId < baseColors.length) {
+            const ownershipColor = (username === playerUsername) ? MY_TILE_COLOR.getHex() : OTHER_PLAYER_TILE_COLOR.getHex();
+            baseColors[tileId] = ownershipColor;
+        }
+    }
+
+    const color = new THREE.Color();
+    const colorAttribute = sphereMesh.geometry.attributes.color;
+    baseColors.forEach((colorHex, index) => {
+        color.setHex(colorHex);
+        colorAttribute.setXYZ(index * 3, color.r, color.g, color.b);
+        colorAttribute.setXYZ(index * 3 + 1, color.r, color.g, color.b);
+        colorAttribute.setXYZ(index * 3 + 2, color.r, color.g, color.b);
+    });
+    colorAttribute.needsUpdate = true;
+}
+
+function updateSphereColors(isSubView) {
+    isSubterraneanView = isSubView;
+    updateAllTileColors();
+}
+
+function setFaceColor(faceIndex, color) {
+    if (!sphereMesh) return;
+    const colorAttribute = sphereMesh.geometry.attributes.color;
+    colorAttribute.setXYZ(faceIndex * 3, color.r, color.g, color.b);
+    colorAttribute.setXYZ(faceIndex * 3 + 1, color.r, color.g, color.b);
+    colorAttribute.setXYZ(faceIndex * 3 + 2, color.r, color.g, color.b);
+    colorAttribute.needsUpdate = true;
+}
 
 // --- Data Fetching and Sphere Creation ---
 fetch('/api/world_data')
@@ -66,47 +86,32 @@ fetch('/api/world_data')
     .then(data => {
         worldData = data;
         const geometry = new THREE.BufferGeometry();
-        
-        // --- FIX: Create fully populated position and color arrays BEFORE creating the mesh ---
-        const positions = [];
-        const colors = []; // Use a standard array to build the data
+        const positions = [], colors = [];
         const color = new THREE.Color();
 
-        // 1. Loop through tiles to build the arrays completely.
         for (const tile of data.tiles) {
             const faceVertexIndices = data.faces[tile.surface_id];
             const v1 = data.vertices[faceVertexIndices[0]], v2 = data.vertices[faceVertexIndices[1]], v3 = data.vertices[faceVertexIndices[2]];
-            
-            // Add vertex positions for this face.
             positions.push(...v1, ...v2, ...v3);
-
-            // Add the initial SURFACE color for all 3 vertices of this face.
             color.setHex(tile.surface_color);
-            colors.push(color.r, color.g, color.b);
-            colors.push(color.r, color.g, color.b);
-            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b, color.r, color.g, color.b, color.r, color.g, color.b);
         }
 
-        // 2. Set the geometry attributes with the fully prepared data.
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
         
-        // 3. Create the material and the final mesh object.
         const material = new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, vertexColors: true, shininess: 10 });
         sphereMesh = new THREE.Mesh(geometry, material);
-        
-        // 4. Now that the sphere is fully created and colored, add it to the scene.
         scene.add(sphereMesh);
         
-        // 5. Add wireframe and cavern markers.
         const wireframeGeometry = new THREE.WireframeGeometry(geometry);
         const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
         wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
         scene.add(wireframeMesh);
         
         const cavernMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-        for (const tile of data.files) {
+        for (const tile of data.tiles) {
             if (tile.has_cavern) {
                 const faceVertexIndices = data.faces[tile.surface_id];
                 const vA=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[0]]); const vB=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[1]]); const vC=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[2]]);
@@ -121,33 +126,7 @@ fetch('/api/world_data')
         }
     });
 
-// --- Core Functions ---
-// This function is now only used for swapping views, not for initialization.
-function updateSphereColors(isSubView) {
-    if (!sphereMesh || !worldData) return;
-    const color = new THREE.Color();
-    const colorAttribute = sphereMesh.geometry.attributes.color;
-
-    worldData.tiles.forEach((tile, index) => {
-        const colorHex = isSubView ? tile.subterranean_color : tile.surface_color;
-        color.setHex(colorHex);
-        colorAttribute.setXYZ(index * 3, color.r, color.g, color.b);
-        colorAttribute.setXYZ(index * 3 + 1, color.r, color.g, color.b);
-        colorAttribute.setXYZ(index * 3 + 2, color.r, color.g, color.b);
-    });
-    colorAttribute.needsUpdate = true;
-}
-
-function setFaceColor(faceIndex, color) {
-    if (!sphereMesh) return;
-    const colorAttribute = sphereMesh.geometry.attributes.color;
-    colorAttribute.setXYZ(faceIndex * 3, color.r, color.g, color.b);
-    colorAttribute.setXYZ(faceIndex * 3 + 1, color.r, color.g, color.b);
-    colorAttribute.setXYZ(faceIndex * 3 + 2, color.r, color.g, color.b);
-    colorAttribute.needsUpdate = true;
-}
-
-// --- Event Handlers (Unchanged) ---
+// --- Event Handlers ---
 function onMouseMove(event) {
     if (!sphereMesh || !worldData) return;
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -156,9 +135,12 @@ function onMouseMove(event) {
     const intersects = raycaster.intersectObject(sphereMesh);
 
     if (lastHoveredFaceIndex !== null) {
-        const tile = worldData.tiles[lastHoveredFaceIndex];
-        const originalColorHex = isSubterraneanView ? tile.subterranean_color : tile.surface_color;
-        setFaceColor(lastHoveredFaceIndex, new THREE.Color(originalColorHex));
+        const isOwned = Object.values(tileOwnership).includes(lastHoveredFaceIndex);
+        if (!isOwned) {
+            const tile = worldData.tiles[lastHoveredFaceIndex];
+            const originalColorHex = isSubterraneanView ? tile.subterranean_color : tile.surface_color;
+            setFaceColor(lastHoveredFaceIndex, new THREE.Color(originalColorHex));
+        }
         lastHoveredFaceIndex = null;
         infoDiv.style.display = 'none';
     }
@@ -167,44 +149,41 @@ function onMouseMove(event) {
         const intersection = intersects[0];
         const faceIndex = Math.floor(intersection.face.a / 3);
         const tile = worldData.tiles[faceIndex];
-        let highlightColor, idToShow, terrainToShow;
-
-        if (isSubterraneanView) {
-            highlightColor = SUBTERRANEAN_HIGHLIGHT_COLOR;
-            idToShow = `SUBTERRANEAN ID: ${tile.subterranean_id}`;
-            terrainToShow = tile.subterranean_terrain;
-        } else {
-            highlightColor = SURFACE_HIGHLIGHT_COLOR;
-            idToShow = `SURFACE ID: ${tile.surface_id}`;
-            terrainToShow = tile.surface_terrain;
+        
+        const isOwned = Object.values(tileOwnership).includes(faceIndex);
+        if (!isOwned) {
+            const highlightColor = isSubterraneanView ? SUBTERRANEAN_HIGHLIGHT_COLOR : SURFACE_HIGHLIGHT_COLOR;
+            setFaceColor(faceIndex, highlightColor);
         }
         
-        setFaceColor(faceIndex, highlightColor);
         lastHoveredFaceIndex = faceIndex;
+        
         infoDiv.style.display = 'block';
         infoDiv.style.left = `${event.clientX + 10}px`;
         infoDiv.style.top = `${event.clientY + 10}px`;
+        
+        const idToShow = isSubterraneanView ? `SUBTERRANEAN ID: ${tile.subterranean_id}` : `SURFACE ID: ${tile.surface_id}`;
+        const terrainToShow = isSubterraneanView ? tile.subterranean_terrain : tile.surface_terrain;
+        
         let infoHtml = `<strong>${idToShow}</strong><br>Terrain: ${terrainToShow}<br>`;
         if (tile.has_cavern) {
             infoHtml += `<em><span style="color: #DDA0DD;">(Linked by Cavern)</span></em><br>`;
         }
         infoHtml += `<hr>`;
-        for(const[scale,value]of Object.entries(tile.scales)){infoHtml+=`${scale}: ${value>=0?'+':''}${value}<br>`;}
+        for (const [scale, value] of Object.entries(tile.scales)) {
+            infoHtml += `${scale}: ${value >= 0 ? '+' : ''}${value}<br>`;
+        }
         infoDiv.innerHTML = infoHtml;
     }
 }
 
-// --- onMouseClick function (Updated) ---
 function onMouseClick(event) {
     if (lastHoveredFaceIndex !== null) {
         const tile = worldData.tiles[lastHoveredFaceIndex];
-        
-        // Instead of logging, now we emit a 'select_tile' event to the server
         console.log(`Sending tile selection to server: ${tile.surface_id}`);
         socket.emit('select_tile', { tile_id: tile.surface_id });
     }
 }
-
 
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -212,14 +191,13 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// --- Animation Loop ---
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
 }
 
-// --- Event Listeners ---
+// Event Listeners
 window.addEventListener('mousemove', onMouseMove);
 window.addEventListener('click', onMouseClick);
 window.addEventListener('resize', onWindowResize);
@@ -227,7 +205,7 @@ window.addEventListener('resize', onWindowResize);
 viewToggleButton.addEventListener('click', () => {
     isSubterraneanView = !isSubterraneanView;
     viewToggleButton.innerText = isSubterraneanView ? 'View Surface' : 'View Subterranean';
-    updateSphereColors(isSubterraneanView);
+    updateAllTileColors();
 });
 
 animate();
