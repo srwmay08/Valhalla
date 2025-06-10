@@ -1,0 +1,3 @@
+# .gitignore
+.env
+server/.env # If your .gitignore is in the root and .env is in server/

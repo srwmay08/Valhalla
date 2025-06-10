@@ -5,6 +5,38 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.getElementById('container').appendChild(renderer.domElement);
 
+const playerUsername = document.getElementById('username').textContent; // Get current user's name
+const socket = io(); // NEW: Initialize connection to the server's WebSocket
+
+// NEW: Colors for player ownership
+const MY_TILE_COLOR = new THREE.Color(0x00FFFF); // Teal for my tile
+const OTHER_PLAYER_TILE_COLOR = new THREE.Color(0xFF0000); // Red for others' tiles
+
+// --- NEW: WebSocket Listeners ---
+
+// This listener waits for 'world_update' messages from the server
+socket.on('world_update', (ownershipData) => {
+    if (!worldData) return;
+
+    console.log("Received world update:", ownershipData);
+
+    // First, revert all tiles to their base terrain color to clear old selections
+    updateSphereColors(isSubterraneanView);
+
+    // Loop through the ownership data and color the claimed tiles
+    for (const username in ownershipData) {
+        const tileId = ownershipData[username];
+        if (username === playerUsername) {
+            setFaceColor(tileId, MY_TILE_COLOR);
+        } else {
+            setFaceColor(tileId, OTHER_PLAYER_TILE_COLOR);
+        }
+    }
+});
+
+
+
+
 // --- Controls ---
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -162,12 +194,17 @@ function onMouseMove(event) {
     }
 }
 
+// --- onMouseClick function (Updated) ---
 function onMouseClick(event) {
     if (lastHoveredFaceIndex !== null) {
         const tile = worldData.tiles[lastHoveredFaceIndex];
-        console.log(`Tile Clicked: Surface ID ${tile.surface_id} / Subterranean ID ${tile.subterranean_id}`);
+        
+        // Instead of logging, now we emit a 'select_tile' event to the server
+        console.log(`Sending tile selection to server: ${tile.surface_id}`);
+        socket.emit('select_tile', { tile_id: tile.surface_id });
     }
 }
+
 
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
