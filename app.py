@@ -16,16 +16,18 @@ from config import (TERRAIN_COLORS, SCALES, #... and all other config vars
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'a-very-secret-and-secure-key-that-you-should-change' 
 app.config["MONGO_URI"] = "mongodb://localhost:27017/valhalla_db"
+# ... (app.config lines) ...
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
+socketio = SocketIO(app) 
 
-# NEW: Initialize SocketIO
-socketio = SocketIO(app)
+# --- Login Manager Setup ---
+# 1. Create the LoginManager instance WITHOUT attaching it to the app yet.
+login_manager = LoginManager() 
 
-# --- Login Manager Setup (Unchanged) ---
-login_manager = LoginManager(app)
+# 2. Now, configure and associate it with the app using init_app.
 login_manager.init_app(app) 
-login_manager.login_view = 'login'
+login_manager.login_view = 'login' 
 login_manager.login_message_category = 'info'
 class User(UserMixin):
     def __init__(self, user_doc): self.user_doc = user_doc
