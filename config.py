@@ -29,6 +29,7 @@ SUBTERRANEAN_SEAS = 15
 # RENAMED: For clarity, these now specify they are for the surface
 MIN_SURFACE_DEEP_SEA_PERCENT = 0.20
 MAX_SURFACE_DEEP_SEA_PERCENT = 0.40
+
 # NEW: Configuration for Subterranean Sea coverage
 MIN_SUBTERRANEAN_SEA_PERCENT = 0.05
 MAX_SUBTERRANEAN_SEA_PERCENT = 0.15

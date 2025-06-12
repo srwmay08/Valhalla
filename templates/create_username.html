@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Create Username</title>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #eee; text-align: center; }
+        .container { max-width: 400px; margin: 50px auto; padding: 20px; background: #222; border: 1px solid #444; border-radius: 8px; }
+        .form-control { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; }
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 4px; background: #007bff; color: white; cursor: pointer; }
+        .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; text-align: left; }
+        .alert-danger { color: #a94442; background-color: #f2dede; border-color: #ebccd1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Choose Your Username</h2>
+        <p style="color: #ccc;">This will be your permanent name in the game.</p>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="">
+            <input type="text" name="username" class="form-control" placeholder="Username" required minlength="3" maxlength="20">
+            <button type="submit" class="btn">Set Username</button>
+        </form>
+    </div>
+</body>
+</html>

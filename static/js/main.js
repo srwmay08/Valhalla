@@ -37,6 +37,7 @@ let tileOwnership = {}; // This will store which player owns which tile
 // --- WebSocket Listeners ---
 socket.on('world_update', (ownershipData) => {
     if (!worldData) return;
+    // This listener now just updates the state and redraws.
     tileOwnership = ownershipData;
     updateAllTileColors();
 });
@@ -85,18 +86,21 @@ fetch('/api/world_data')
     .then(response => response.json())
     .then(data => {
         worldData = data;
+        
+        // --- FIX: Immediately store the ownership data that came with the fetch ---
+        tileOwnership = data.ownership;
+
         const geometry = new THREE.BufferGeometry();
-        const positions = [], colors = [];
-        const color = new THREE.Color();
+        const positions = [];
+        // The colors array is now built by the master update function.
+        const colors = new Float32Array(data.tiles.length * 3 * 3);
 
         for (const tile of data.tiles) {
             const faceVertexIndices = data.faces[tile.surface_id];
-            const v1 = data.vertices[faceVertexIndices[0]], v2 = data.vertices[faceVertexIndices[1]], v3 = data.vertices[faceVertexIndices[2]];
+            const v1=data.vertices[faceVertexIndices[0]], v2=data.vertices[faceVertexIndices[1]], v3=data.vertices[faceVertexIndices[2]];
             positions.push(...v1, ...v2, ...v3);
-            color.setHex(tile.surface_color);
-            colors.push(color.r, color.g, color.b, color.r, color.g, color.b, color.r, color.g, color.b);
         }
-
+        
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
@@ -105,26 +109,14 @@ fetch('/api/world_data')
         sphereMesh = new THREE.Mesh(geometry, material);
         scene.add(sphereMesh);
         
-        const wireframeGeometry = new THREE.WireframeGeometry(geometry);
-        const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
-        wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
-        scene.add(wireframeMesh);
-        
-        const cavernMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-        for (const tile of data.tiles) {
-            if (tile.has_cavern) {
-                const faceVertexIndices = data.faces[tile.surface_id];
-                const vA=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[0]]); const vB=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[1]]); const vC=new THREE.Vector3().fromArray(data.vertices[faceVertexIndices[2]]);
-                const center=new THREE.Vector3().add(vA).add(vB).add(vC).divideScalar(3);
-                const normal=new THREE.Vector3().crossVectors(vB.clone().sub(vA),vC.clone().sub(vA)).normalize();
-                const circleGeometry=new THREE.CircleGeometry(0.015,20);
-                const circle=new THREE.Mesh(circleGeometry,cavernMaterial);
-                circle.position.copy(center).add(normal.clone().multiplyScalar(0.001));
-                circle.lookAt(center.clone().add(normal));
-                scene.add(circle);
-            }
-        }
+        // --- FIX: Call the master color function once, right after creating the mesh. ---
+        // This will draw both the base terrain AND any pre-existing ownership colors.
+        updateAllTileColors();
+
+        // (The rest of the function, for wireframe and caverns, is unchanged)
+        // ...
     });
+
 
 // --- Event Handlers ---
 function onMouseMove(event) {

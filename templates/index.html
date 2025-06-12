@@ -42,14 +42,16 @@
 <body>
     <div id="app-container">
         <div class="navbar">
-            {% if current_user.is_authenticated %}
-                <span>Welcome, {{ user.username or user.email }}</span>
-                <a href="{{ url_for('logout') }}">Logout</a>
-            {% else %}
-                <a href="{{ url_for('login') }}">Login</a>
-                <a href="{{ url_for('register') }}">Register</a>
-            {% endif %}
-        </div>
+    {% if current_user.is_authenticated %}
+        <span>Welcome, {{ user.username }}</span>
+        <a href="{{ url_for('logout') }}">Logout</a>
+    {% else %}
+        <a href="{{ url_for('login') }}">Login</a>
+        <a href="{{ url_for('register') }}">Register</a>
+    {% endif %}
+</div>
+
+<span id="username" style="display: none;">{{ user.username }}</span>
         
         <span id="username" style="display: none;">{{ user.username or 'Player' }}</span>
         
