@@ -31,7 +31,7 @@
             box-sizing: border-box; 
             pointer-events: none; /* Let clicks pass through */
         }
-        .navbar a, .navbar span { 
+        .navbar a, .navbar span, .navbar button { 
             pointer-events: auto;
             color: white; 
             margin-left: 15px;
@@ -39,6 +39,14 @@
             font-weight: bold;
             text-shadow: 0 0 5px #000;
         }
+        .navbar button {
+            background: #d9534f;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .navbar button:hover { background: #c9302c; }
 
         /* Game UI */
         #game-ui {
@@ -96,6 +104,7 @@
         <div class="navbar">
             {% if current_user.is_authenticated %}
                 <span>Commander {{ user.username }} ({{ user.user_doc.get('race', 'Human') }})</span>
+                <button id="btn-restart">Restart Game</button>
                 <a href="{{ url_for('logout') }}">Retreat (Logout)</a>
             {% else %}
                 <a href="{{ url_for('login') }}">Login</a>

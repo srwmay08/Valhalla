@@ -266,7 +266,7 @@ def generate_game_world():
         is_near_plain = any(face_terrain[n] == "Plain" for n in face_neighbors[i])
         if is_near_plain and random.random() < SPAWN_CHANCE_FARM: face_terrain[i] = "Farm"
 
-    # --- Enforce Movement Rules (Remove roads touching Sea/Deep Sea) ---
+    # --- Enforce Movement Rules & Water Logic ---
     invalid_edges = set()
     for face_idx, terrain in enumerate(face_terrain):
         if terrain in ["Sea", "Deep Sea"]:
@@ -298,11 +298,22 @@ def generate_game_world():
     game_state["roads"] = list(valid_roads)
     game_state["fortresses"] = {}
     
+    # --- Identify Water-Locked Vertices ---
+    # Map vertices to faces
+    vertex_faces = {i: [] for i in range(len(vertices))}
+    for f_idx, face in enumerate(faces):
+        for v_idx in face:
+            vertex_faces[v_idx].append(f_idx)
+            
     # --- Generate Fortresses with Fixed Types ---
     types_keys = list(FORTRESS_TYPES.keys())
     types_probs = [FORTRESS_TYPES[k]["prob"] for k in types_keys]
     
     for i in range(len(vertices)):
+        # Determine if this vertex is in water (all adjacent faces are sea/deep sea)
+        adjacent_terrain = [face_terrain[f] for f in vertex_faces[i]]
+        is_water_locked = all(t in ["Deep Sea", "Sea"] for t in adjacent_terrain)
+
         # Randomly assign a type based on probabilities
         ftype = random.choices(types_keys, types_probs)[0]
         
@@ -315,7 +326,8 @@ def generate_game_world():
             "special_active": False,
             "tier": 1, 
             "paths": [],
-            "type": ftype # Permanent type
+            "type": ftype, # Permanent type
+            "disabled": is_water_locked # Flag for rendering
         }
     game_state["initialized"] = True
 
@@ -347,7 +359,10 @@ def process_ai_turn():
              
              for n_id in neighbors:
                  if str(n_id) in fort['paths']: continue
-                 target = game_state["fortresses"][str(n_id)]
+                 target = game_state["fortresses"].get(str(n_id))
+                 
+                 # Skip invalid/disabled targets
+                 if not target or target.get('disabled'): continue
                  
                  # AI Evaluation Score
                  score = 0
@@ -382,9 +397,9 @@ def background_thread():
         face_ownership = {}
         for idx, face in enumerate(game_state["faces"]):
             v1, v2, v3 = [str(x) for x in face]
-            o1 = game_state["fortresses"][v1]['owner']
-            o2 = game_state["fortresses"][v2]['owner']
-            o3 = game_state["fortresses"][v3]['owner']
+            o1 = game_state["fortresses"][v1].get('owner')
+            o2 = game_state["fortresses"][v2].get('owner')
+            o3 = game_state["fortresses"][v3].get('owner')
             
             if o1 and o1 == o2 and o2 == o3:
                 face_ownership[str(idx)] = o1
@@ -401,6 +416,8 @@ def background_thread():
         process_ai_turn()
         
         for fid, fort in game_state["fortresses"].items():
+            if fort.get('disabled'): continue
+
             f_type_stats = FORTRESS_TYPES[fort['type']]
             
             # 1. Passive Growth
@@ -427,7 +444,7 @@ def background_thread():
             if fort['paths']:
                 for target_id in fort['paths']:
                     target = game_state["fortresses"].get(target_id)
-                    if not target: continue
+                    if not target or target.get('disabled'): continue
                     
                     amount = FLOW_RATE
                     
@@ -553,7 +570,8 @@ def create_app():
         return jsonify({
             "vertices": game_state["vertices"], "faces": game_state["faces"],
             "face_colors": game_state["face_colors"], "roads": game_state["roads"],
-            "fortresses": game_state["fortresses"], "adj": game_state["adj"], "races": RACES
+            "fortresses": game_state["fortresses"], "adj": game_state["adj"], "races": RACES,
+            "fortress_types": FORTRESS_TYPES
         })
 
     @socketio.on('connect')
@@ -565,6 +583,18 @@ def create_app():
             assign_home_sector(current_user)
             emit('update_map', game_state["fortresses"])
             emit('update_face_colors', game_state["face_colors"])
+
+    @socketio.on('restart_game')
+    @login_required
+    def handle_restart():
+        # Reset game world
+        generate_game_world()
+        game_state["sector_owners"] = {}
+        # Re-assign home for current user
+        assign_home_sector(current_user)
+        # Broadcast full update
+        emit('update_map', game_state["fortresses"], broadcast=True)
+        emit('update_face_colors', game_state["face_colors"], broadcast=True)
 
     def assign_home_sector(user):
         """Assigns a full triangular sector (3 vertices) to the player."""
@@ -584,9 +614,12 @@ def create_app():
             if terrain in ["Deep Sea", "Sea", "Mountain"]: continue
             
             v1, v2, v3 = [str(x) for x in face]
-            f1, f2, f3 = game_state["fortresses"][v1], game_state["fortresses"][v2], game_state["fortresses"][v3]
+            f1 = game_state["fortresses"].get(v1)
+            f2 = game_state["fortresses"].get(v2)
+            f3 = game_state["fortresses"].get(v3)
             
-            # Ensure nobody owns any of these yet
+            # Ensure none are disabled or owned
+            if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
             if f1['owner'] or f2['owner'] or f3['owner']: continue
 
             # Setup Home Sector
@@ -625,7 +658,9 @@ def create_app():
             if terrain in ["Deep Sea", "Sea", "Mountain"]: continue
             
             v1, v2, v3 = [str(x) for x in face]
-            f1, f2, f3 = game_state["fortresses"][v1], game_state["fortresses"][v2], game_state["fortresses"][v3]
+            f1, f2, f3 = game_state["fortresses"].get(v1), game_state["fortresses"].get(v2), game_state["fortresses"].get(v3)
+            
+            if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
             
             if not f1['owner'] and not f2['owner'] and not f3['owner']:
                 ai_color = RACES["Orc"]["color"]
@@ -647,6 +682,7 @@ def create_app():
         if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]: return
         src_fort = game_state["fortresses"][src_id]
         if src_fort['owner'] != current_user.username: return
+        if src_fort.get('disabled'): return
         
         # Check valid road (already filtered in game_state["adj"])
         if int(tgt_id) not in game_state["adj"].get(int(src_id), []): return
