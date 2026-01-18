@@ -11,7 +11,7 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET')
 
 # ==========================================
-#        LEGACY WORLD GENERATION
+#        WORLD GENERATION (High Ground Rules)
 # ==========================================
 SURFACE_OCEANS = 4
 SUBTERRANEAN_SEAS = 15
@@ -28,6 +28,7 @@ SPAWN_CHANCE_FARM = 0.02
 SPAWN_CHANCE_CAVERN = 0.005
 MOUNTAIN_RANGE_MIN_LENGTH = 8
 MOUNTAIN_RANGE_MAX_LENGTH = 22
+
 SCALES = ["Life/Death", "Heat/Cold", "Exertion/Torpor", "Magic/Drain", "Order/Chaos", "Luck/Woe"]
 TERRAIN_COLORS = {
     "Deep Sea": 0x000033, "Sea": 0x00008B, "Plain": 0x90EE90, "Hill": 0x8B4513,
@@ -36,17 +37,42 @@ TERRAIN_COLORS = {
 }
 
 # ==========================================
-#        TOWER DEFENSE GAME SETTINGS
+#        GAMEPLAY SETTINGS
 # ==========================================
 
 MAX_PLAYERS = 4
 ICO_SUBDIVISIONS = 2  
 
 # --- Resources & Economy ---
-STARTING_UNITS = 30
-NEUTRAL_GARRISON = 5
-NPC_STARTING_NODES = 2 # How many bases the NPC starts with
-NPC_MOVE_INTERVAL = 3.0 # Seconds between NPC moves
+STARTING_UNITS_POOL = 45 # Total units distributed across the 3 starting nodes
+NEUTRAL_GARRISON_MIN = 5
+NEUTRAL_GARRISON_MAX = 100
+TICK_RATE = 1.0
+FLOW_RATE = 0.5 
+
+# --- Upgrades (Cost to upgrade) ---
+# Tier 1 is default.
+UPGRADE_COST_TIER_2 = 50
+UPGRADE_COST_TIER_3 = 120
+
+# --- Fortress Types (The "Specialization") ---
+FORTRESS_TYPES = {
+    "Keep":       {"prob": 0.4, "gen_mult": 1.0, "cap": 60,  "def_mod": 1.0, "atk_mod": 1.0, "desc": "Balanced"},
+    "Farm":       {"prob": 0.2, "gen_mult": 2.0, "cap": 40,  "def_mod": 0.7, "atk_mod": 0.8, "desc": "High Spawn"},
+    "Tower":      {"prob": 0.1, "gen_mult": 0.5, "cap": 40,  "def_mod": 1.5, "atk_mod": 1.5, "desc": "High DMG"},
+    "Laboratory": {"prob": 0.15, "gen_mult": 0.8, "cap": 50,  "def_mod": 1.2, "atk_mod": 1.1, "desc": "Support"},
+    "Blacksmith": {"prob": 0.15, "gen_mult": 0.8, "cap": 80,  "def_mod": 1.4, "atk_mod": 1.0, "desc": "Siege/Tank"}
+}
+
+# --- AI Settings ---
+AI_DIFFICULTY = "Normal" # Very Easy, Easy, Normal, Hard, Very Hard
+AI_PROFILES = {
+    "Very Easy": {"expand_bias": 0.1, "reaction_delay": 4},
+    "Easy":      {"expand_bias": 0.3, "reaction_delay": 3},
+    "Normal":    {"expand_bias": 0.5, "reaction_delay": 1},
+    "Hard":      {"expand_bias": 0.8, "reaction_delay": 0},
+    "Very Hard": {"expand_bias": 1.0, "reaction_delay": 0}
+}
 
 # --- Visual Settings ---
 PLAYER_COLORS = [(255,0,0), (0,0,255), (0,255,255), (255,255,0)]
@@ -55,7 +81,7 @@ COLOR_HIGHLIGHT = 0xffff00
 COLOR_CONN_VALID = 0x00ff00
 COLOR_CONN_INVALID = 0xff0000
 
-# --- Races & Units ---
+# --- Races (Flavor/Base Stats) ---
 RACES = {
     "Human": {
         "color": 0x3366ff,
@@ -64,11 +90,11 @@ RACES = {
         "speed": 1.0,
         "special_unit": "Paladin",
         "special_bonus": 1.5,
-        "sprite": "human_icon.png" # Placeholder for future
+        "sprite": "human_icon.png"
     },
     "Orc": {
         "color": 0xff3333,
-        "base_atk": 1.4, # Orcs are aggressive
+        "base_atk": 1.4,
         "base_def": 0.7,
         "speed": 1.2,
         "special_unit": "Berserker",
