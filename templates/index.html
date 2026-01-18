@@ -2,61 +2,136 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Interactive Icosphere</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Valhalla: Vertex Wars</title>
     <style>
-        /* NEW: Remove body margin and hide overflow to prevent scrollbars */
         body { 
-            margin: 0;
+            margin: 0; 
             overflow: hidden; 
-            background-color: #00001a;
+            background-color: #050510;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        canvas { display: block; }
+        canvas { display: block; touch-action: none; }
         
-        /* NEW: Main container for the app */
         #app-container {
-            position: relative; /* This is now the positioning context for child elements */
+            position: relative;
             width: 100vw;
             height: 100vh;
         }
 
-        /* The canvas is now a direct child of the container */
-        #container {
+        /* Navbar / Overlay */
+        .navbar { 
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0)); 
+            padding: 15px; 
+            text-align: right; 
+            box-sizing: border-box; 
+            pointer-events: none; /* Let clicks pass through */
+        }
+        .navbar a, .navbar span { 
+            pointer-events: auto;
+            color: white; 
+            margin-left: 15px;
+            text-decoration: none; 
+            font-weight: bold;
+            text-shadow: 0 0 5px #000;
         }
 
-        /* All UI elements are now positioned relative to the app-container */
-        .navbar, #info, #view-toggle {
+        /* Game UI */
+        #game-ui {
             position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(20, 20, 30, 0.9);
+            border: 1px solid #445;
+            border-radius: 12px;
+            padding: 20px;
+            color: #eee;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            display: none; /* Hidden until selection */
+            pointer-events: auto;
         }
         
-        /* (The rest of your styles for navbar, info, view-toggle, etc. are unchanged) */
-        .navbar { top: 0; left: 0; width: 100%; background: rgba(0,0,0,0.3); padding: 10px; text-align: right; box-sizing: border-box; }
-        .navbar a { color: white; padding: 10px 15px; text-decoration: none; font-family: sans-serif; }
-        .navbar span { color: #ccc; padding: 10px 15px; font-family: sans-serif; }
-        #info { top: 40px; left: 10px; padding: 10px; background-color: rgba(0,0,0,0.5); color: white; font-family: monospace; border-radius: 5px; display: none; }
-        #view-toggle { bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; font-size: 16px; background-color: #333; color: white; border: 1px solid #555; border-radius: 5px; cursor: pointer; }
+        #game-ui h3 { margin-top: 0; border-bottom: 1px solid #556; padding-bottom: 10px; }
+        
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .stat-label { color: #aaa; }
+        
+        #slider-container { margin-top: 20px; text-align: center; }
+        input[type=range] { width: 100%; accent-color: #007bff; }
+        
+        button#btn-action {
+            width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            background: #007bff;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button#btn-action:hover { background: #0056b3; }
+        button#btn-action:disabled { background: #444; cursor: not-allowed; }
+        
+        #status-msg {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ffcc00;
+            font-size: 18px;
+            text-shadow: 0 2px 4px #000;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
     <div id="app-container">
         <div class="navbar">
-    {% if current_user.is_authenticated %}
-        <span>Welcome, {{ user.username }}</span>
-        <a href="{{ url_for('logout') }}">Logout</a>
-    {% else %}
-        <a href="{{ url_for('login') }}">Login</a>
-        <a href="{{ url_for('register') }}">Register</a>
-    {% endif %}
-</div>
+            {% if current_user.is_authenticated %}
+                <span>Commander {{ user.username }} ({{ user.user_doc.get('race', 'Human') }})</span>
+                <a href="{{ url_for('logout') }}">Retreat (Logout)</a>
+            {% else %}
+                <a href="{{ url_for('login') }}">Login</a>
+            {% endif %}
+        </div>
+        
+        <span id="username" style="display: none;">{{ user.username }}</span>
 
-<span id="username" style="display: none;">{{ user.username }}</span>
-        
-        <span id="username" style="display: none;">{{ user.username or 'Player' }}</span>
-        
-        <div id="info"></div>
-        <div id="container"></div> <button id="view-toggle">View Subterranean</button>
+        <div id="status-msg"></div>
+
+        <div id="canvas-container"></div>
+
+        <div id="game-ui">
+            <h3 id="ui-title">Fortress</h3>
+            <div class="stat-row">
+                <span class="stat-label">Owner:</span>
+                <span id="ui-owner">Neutral</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Units:</span>
+                <span id="ui-units">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Special:</span>
+                <span id="ui-special">Inactive</span>
+            </div>
+            
+            <div id="action-area" style="display:none;">
+                <hr style="border-color: #445;">
+                <div id="slider-container">
+                    <label>Send Units: <span id="ui-send-val">0</span></label>
+                    <input type="range" id="unit-slider" min="1" max="100" value="50">
+                </div>
+                <button id="btn-action">SELECT TARGET</button>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
