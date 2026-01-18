@@ -19,15 +19,15 @@ let gameState = null;
 
 // Storage
 let fortressMeshes = {}; 
-let lineMap = {}; // Maps "u_v" key to THREE.Line object
-let activeArrows = []; // Stores arrow meshes
-let sectorIcons = {}; // Maps faceIndex to sprite
+let lineMap = {}; 
+let activeArrows = []; 
+let sectorIcons = {}; 
 
 let globeMesh = null;    
 let selectedSourceId = null;
 let selectedTargetId = null;
 
-const playerUsername = document.getElementById('username').textContent.trim();
+const playerUsername = document.getElementById('username') ? document.getElementById('username').textContent.trim() : "Player";
 const socket = io();
 
 // UI Elements
@@ -92,30 +92,31 @@ function init() {
 
 // --- Visual Helpers ---
 
-function createLabelTexture(units, tier, ownerColor) {
-    const size = 256;
+function createLabelTexture(units, tier) {
+    const size = 128; 
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Unit Count (Big Bold White)
+    // Unit Count (Bold White, Centered)
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 90px Arial";
+    ctx.font = "bold 50px Arial"; 
     ctx.textAlign = "center";
-    ctx.shadowColor = "rgba(0,0,0,0.8)";
-    ctx.shadowBlur = 6;
-    ctx.fillText(Math.floor(units).toString(), size/2, size/2);
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,1.0)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(Math.floor(units).toString(), size/2, size/2 - 10);
 
-    // Tier Circles (Below units)
-    const radius = 15;
-    const gap = 45;
+    // Tier Circles
+    const radius = 6;
+    const gap = 18;
     const startX = (size/2) - gap;
-    const y = (size/2) + 50;
+    const y = (size/2) + 30;
 
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 2;
     ctx.strokeStyle = "#000000"; 
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur = 0; 
 
     for (let i = 0; i < 3; i++) {
         const cx = startX + (i * gap);
@@ -123,13 +124,11 @@ function createLabelTexture(units, tier, ownerColor) {
         ctx.arc(cx, y, radius, 0, 2 * Math.PI);
         ctx.stroke();
         
-        // Tier 1 = Left, Tier 2 = Middle, Tier 3 = Right
-        // Logic: if tier is 2, circles 0 and 1 are lit.
         if (i < tier) {
             ctx.fillStyle = "#ffffff";
             ctx.fill();
         } else {
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; 
             ctx.fill();
         }
     }
@@ -141,7 +140,34 @@ function createLabelTexture(units, tier, ownerColor) {
 function createFortressMesh(data) {
     const group = new THREE.Group();
     
-    // 1. Icon Sprite (Building)
+    // -- 1. 3D Mesh (The Tower/Base) --
+    // Color based on owner or neutral
+    let baseColor = COLORS.neutral;
+    if (data.owner) {
+        const raceInfo = gameState.races[data.race];
+        if (raceInfo) baseColor = raceInfo.color;
+    }
+    
+    const mat = new THREE.MeshPhongMaterial({ color: baseColor, flatShading: true });
+    
+    // Geometry: Simple Cylinder Base
+    const baseGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.12, 6);
+    const baseMesh = new THREE.Mesh(baseGeo, mat);
+    // Align base so bottom is near 0
+    baseMesh.position.y = 0.06; 
+    // Randomize rotation for variety
+    baseMesh.rotation.y = Math.random() * Math.PI;
+    group.add(baseMesh);
+
+    // Geometry: Roof (Darker)
+    const roofGeo = new THREE.ConeGeometry(0.06, 0.08, 6);
+    // Darken color manually for roof (basic approach)
+    const roofMat = new THREE.MeshPhongMaterial({ color: 0x333333, flatShading: true });
+    const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+    roofMesh.position.y = 0.16; // Sit on top of base
+    group.add(roofMesh);
+
+    // -- 2. Icon Sprite (Type Indicator) --
     let iconName = "keep.png"; 
     if (gameState.fortress_types && gameState.fortress_types[data.type]) {
         iconName = gameState.fortress_types[data.type].icon || "keep.png";
@@ -150,19 +176,26 @@ function createFortressMesh(data) {
     const iconMap = new THREE.TextureLoader().load('/static/icons/' + iconName);
     const iconMat = new THREE.SpriteMaterial({ map: iconMap, color: 0xffffff });
     const iconSprite = new THREE.Sprite(iconMat);
-    iconSprite.scale.set(0.35, 0.35, 1);
-    iconSprite.position.y = -0.05;
+    
+    // Scale & Position: Float above the roof
+    iconSprite.scale.set(0.12, 0.12, 1); 
+    iconSprite.position.y = 0.28; 
     group.add(iconSprite);
 
-    // 2. Info Label (Units + Tier)
-    const labelTex = createLabelTexture(data.units, data.tier, 0xffffff);
+    // -- 3. Info Label (Units + Tier) --
+    const labelTex = createLabelTexture(data.units, data.tier);
     const labelMat = new THREE.SpriteMaterial({ map: labelTex });
     const labelSprite = new THREE.Sprite(labelMat);
-    labelSprite.scale.set(0.6, 0.6, 1);
-    labelSprite.position.y = 0.05; 
+    
+    // Scale: Small but readable
+    labelSprite.scale.set(0.15, 0.15, 1);
+    // Position: Overlaid on the icon slightly or above it
+    labelSprite.position.y = 0.28; 
+    labelSprite.position.z = 0.02; // Push forward slightly
+    
     group.add(labelSprite);
 
-    return { group, iconSprite, labelSprite };
+    return { group, baseMesh, iconSprite, labelSprite };
 }
 
 function buildWorld(data) {
@@ -194,20 +227,29 @@ function buildWorld(data) {
         const fortressData = data.fortresses[index.toString()];
         if (!fortressData || fortressData.disabled) return;
 
-        const { group, iconSprite, labelSprite } = createFortressMesh(fortressData);
+        const { group, baseMesh, iconSprite, labelSprite } = createFortressMesh(fortressData);
         group.position.set(v[0], v[1], v[2]);
-        group.position.multiplyScalar(1.06); // Hover slightly above surface
-        
+        // Orient 'up' away from center
+        group.lookAt(0, 0, 0); 
+        // lookAt points Z axis at target. We want Y axis pointing away.
+        // A simple fix for LookAt on sphere surface:
+        // By default lookAt(0,0,0) points the object's +Z face at origin.
+        // We want the object's +Y (up) to point AWAY from origin.
+        // We can just use standard quaternion math:
+        const up = new THREE.Vector3(v[0], v[1], v[2]).normalize();
+        group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+
         // Metadata for Raycaster
         group.userData = { id: index.toString(), type: 'fortress' };
-        iconSprite.userData = { id: index.toString(), type: 'fortress' };
+        // Traverse children to set ID for raycasting
+        group.children.forEach(c => c.userData = { id: index.toString(), type: 'fortress' });
         
         scene.add(group);
-        fortressMeshes[index.toString()] = { mesh: group, iconSprite, labelSprite };
+        fortressMeshes[index.toString()] = { mesh: group, baseMesh, iconSprite, labelSprite };
     });
 
     // 3. Roads (Lines)
-    const lineMat = new THREE.LineBasicMaterial({ color: COLORS.connection, linewidth: 2 });
+    const lineMat = new THREE.LineBasicMaterial({ color: COLORS.connection, linewidth: 1 });
     lineMap = {};
     
     data.roads.forEach(road => {
@@ -216,15 +258,14 @@ function buildWorld(data) {
         const p1 = new THREE.Vector3(...data.vertices[u]);
         const p2 = new THREE.Vector3(...data.vertices[v]);
         
-        // Push lines out slightly so they don't clip into the globe
-        p1.multiplyScalar(1.01);
-        p2.multiplyScalar(1.01);
+        // Push lines out slightly
+        p1.multiplyScalar(1.02);
+        p2.multiplyScalar(1.02);
 
         const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-        const line = new THREE.Line(geo, lineMat.clone()); // Clone mat to allow individual coloring
+        const line = new THREE.Line(geo, lineMat.clone());
         scene.add(line);
         
-        // Store for quick access. Key is smaller_id + "_" + larger_id
         const key = u < v ? `${u}_${v}` : `${v}_${u}`;
         lineMap[key] = line;
     });
@@ -234,44 +275,31 @@ function buildWorld(data) {
 }
 
 function updateSectorVisuals() {
-    // Check game state for sector owners and place dominance icons
     if (!gameState.sector_owners) return;
-
-    // Load texture once
-    const dominanceTex = new THREE.TextureLoader().load('/static/icons/star_shield.png'); // You might need to add a generic icon or reuse one
+    const dominanceTex = new THREE.TextureLoader().load('/static/icons/star_shield.png'); 
 
     for (let faceIdx = 0; faceIdx < gameState.faces.length; faceIdx++) {
         const owner = gameState.sector_owners[faceIdx.toString()];
         
-        // Existing icon?
         if (sectorIcons[faceIdx]) {
             if (!owner) {
-                // Remove if no longer owned
                 scene.remove(sectorIcons[faceIdx]);
                 delete sectorIcons[faceIdx];
-            } else {
-                // Update Color just in case
-                // sectorIcons[faceIdx].material.color.setHex(...);
             }
         } else if (owner) {
-            // Create new icon
-            const mat = new THREE.SpriteMaterial({ 
-                map: dominanceTex, 
-                color: 0xffff00 // Gold for dominance
-            });
+            const mat = new THREE.SpriteMaterial({ map: dominanceTex, color: 0xffff00 });
             const sprite = new THREE.Sprite(mat);
             
-            // Calculate Center
             const face = gameState.faces[faceIdx];
             const v1 = new THREE.Vector3(...gameState.vertices[face[0]]);
             const v2 = new THREE.Vector3(...gameState.vertices[face[1]]);
             const v3 = new THREE.Vector3(...gameState.vertices[face[2]]);
             
             const center = new THREE.Vector3().addVectors(v1, v2).add(v3).divideScalar(3);
-            center.multiplyScalar(1.04); // Slightly above face
+            center.multiplyScalar(1.03); 
             
             sprite.position.copy(center);
-            sprite.scale.set(0.2, 0.2, 1);
+            sprite.scale.set(0.1, 0.1, 1); 
             scene.add(sprite);
             sectorIcons[faceIdx] = sprite;
         }
@@ -279,18 +307,15 @@ function updateSectorVisuals() {
 }
 
 function updatePathVisuals() {
-    // 1. Reset all Lines to default
     Object.values(lineMap).forEach(line => {
         line.material.color.setHex(COLORS.connection);
         line.material.opacity = 0.3;
         line.material.transparent = true;
     });
 
-    // 2. Clear old Arrows
     activeArrows.forEach(arrow => scene.remove(arrow));
     activeArrows = [];
 
-    // 3. Highlight Valid Neighbors (Green Lines)
     if (selectedSourceId) {
         const neighbors = gameState.adj[selectedSourceId] || [];
         neighbors.forEach(nId => {
@@ -298,18 +323,16 @@ function updatePathVisuals() {
             const v = parseInt(nId);
             const key = u < v ? `${u}_${v}` : `${v}_${u}`;
             const line = lineMap[key];
-            
-            // If line exists and target is not disabled
             const targetFort = gameState.fortresses[nId];
+            
             if (line && targetFort && !targetFort.disabled) {
-                line.material.color.setHex(COLORS.connectionValid); // Green
+                line.material.color.setHex(COLORS.connectionValid);
                 line.material.opacity = 0.8;
             }
         });
     }
 
-    // 4. Draw Active Flow Arrows & Color Active Lines (Orange/Red)
-    const coneGeo = new THREE.ConeGeometry(0.04, 0.15, 8);
+    const coneGeo = new THREE.ConeGeometry(0.02, 0.08, 8); 
     
     for (const [id, fort] of Object.entries(gameState.fortresses)) {
         if (!fort.paths || fort.paths.length === 0) continue;
@@ -327,25 +350,29 @@ function updatePathVisuals() {
             const key = u < v ? `${u}_${v}` : `${v}_${u}`;
             const line = lineMap[key];
             if (line) {
-                line.material.color.setHex(COLORS.connectionActive); // Orange
+                line.material.color.setHex(COLORS.connectionActive);
                 line.material.opacity = 1.0;
             }
 
-            // Draw Arrow (Actual Geometry)
-            // Direction
+            // Draw Arrow
             const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
-            // Position (Near source, pointing out)
             const dist = p1.distanceTo(p2);
-            const arrowPos = p1.clone().add(dir.clone().multiplyScalar(dist * 0.3)); // 30% of the way
+            const arrowPos = p1.clone().add(dir.clone().multiplyScalar(dist * 0.35));
             
             const arrowMat = new THREE.MeshBasicMaterial({ color: COLORS.connectionActive });
             const arrowMesh = new THREE.Mesh(coneGeo, arrowMat);
             
             arrowMesh.position.copy(arrowPos);
+            // Orient arrow along line
             arrowMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-            // Rotate 90 deg so cone points along line
-            arrowMesh.rotateX(Math.PI / 2);
-
+            // Cones point UP by default, so align Y axis to direction.
+            // But we might need to rotate 90 if it looks wrong. 
+            // Default cone points +Y. Our quaternion aligns +Y to dir. So this is correct.
+            // Wait, previous code had rotateX(PI/2). Let's stick to standard lookAt logic:
+            // arrowMesh.lookAt(p2) points +Z at target. 
+            // We want Cone tip (+Y) to point at target.
+            // `setFromUnitVectors` does exactly that if we map (0,1,0) -> dir.
+            
             scene.add(arrowMesh);
             activeArrows.push(arrowMesh);
         });
@@ -353,16 +380,14 @@ function updatePathVisuals() {
 }
 
 function updateVisuals(fortresses) {
-    // Update Fortresses
     for (const [id, data] of Object.entries(fortresses)) {
         if (data.disabled) continue;
         let obj = fortressMeshes[id];
         if (!obj) continue;
 
-        // Update Label
+        // Texture Update
         const currentUnits = Math.floor(data.units);
         if (obj.lastUnits !== currentUnits || obj.lastTier !== data.tier) {
-            // Re-render texture
             const newTex = createLabelTexture(data.units, data.tier);
             obj.labelSprite.material.map = newTex;
             obj.labelSprite.material.needsUpdate = true;
@@ -370,16 +395,17 @@ function updateVisuals(fortresses) {
             obj.lastTier = data.tier;
         }
 
-        // Tint Icon based on owner
+        // Color Update for 3D Mesh
         if (data.owner) {
             const raceInfo = gameState.races[data.race];
-            obj.iconSprite.material.color.setHex(raceInfo ? raceInfo.color : 0xffffff);
+            const c = raceInfo ? raceInfo.color : COLORS.neutral;
+            obj.baseMesh.material.color.setHex(c);
+            // Optionally tint icon? No, let's keep icon original colors
+            // obj.iconSprite.material.color.setHex(c);
         } else {
-            obj.iconSprite.material.color.setHex(0xffffff);
+            obj.baseMesh.material.color.setHex(COLORS.neutral);
         }
     }
-    
-    // Update Arrows and Lines
     updatePathVisuals();
     updateSectorVisuals();
 }
@@ -389,12 +415,8 @@ socket.on('update_map', (fortresses) => {
     gameState.fortresses = fortresses;
     updateVisuals(fortresses);
     
-    // If UI is open, refresh values
-    if (selectedSourceId && !selectedTargetId) {
-        updateHUD(selectedSourceId);
-    } else if (selectedTargetId) {
-        updateHUD(selectedTargetId);
-    }
+    if (selectedSourceId && !selectedTargetId) updateHUD(selectedSourceId);
+    else if (selectedTargetId) updateHUD(selectedTargetId);
 });
 
 socket.on('update_face_colors', (faceColors) => {
@@ -403,8 +425,7 @@ socket.on('update_face_colors', (faceColors) => {
     const colors = globeMesh.geometry.attributes.color.array;
     const colorHelper = new THREE.Color();
     for (let i = 0; i < faceColors.length; i++) {
-        const hex = faceColors[i];
-        colorHelper.setHex(hex);
+        colorHelper.setHex(faceColors[i]);
         const startIdx = i * 9;
         for (let j = 0; j < 9; j += 3) {
             colors[startIdx + j] = colorHelper.r;
@@ -413,41 +434,35 @@ socket.on('update_face_colors', (faceColors) => {
         }
     }
     globeMesh.geometry.attributes.color.needsUpdate = true;
-    updateSectorVisuals(); // Refresh icons
+    updateSectorVisuals();
 });
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
 function onMouseMove(event) {
-    // Calculate Mouse Position
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    // Raycast for Hover Effects
     if (gameState) {
         raycaster.setFromCamera(mouse, camera);
-        const allSprites = [];
-        Object.values(fortressMeshes).forEach(o => allSprites.push(o.iconSprite));
-        
-        const intersects = raycaster.intersectObjects(allSprites, true);
+        const allMeshes = [];
+        // Check against the GROUP (which contains base and sprites)
+        Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
+        const intersects = raycaster.intersectObjects(allMeshes, true);
         
         if (intersects.length > 0) {
-            const targetId = intersects[0].object.userData.id;
-            updateHUD(targetId); // Update HUD on Hover
-            document.body.style.cursor = 'pointer';
+            // Traverse up to find user data
+            let target = intersects[0].object;
+            while (target.parent && !target.userData.id) target = target.parent;
+            
+            const targetId = target.userData.id;
+            if (targetId) {
+                updateHUD(targetId);
+                document.body.style.cursor = 'pointer';
+            }
         } else {
             document.body.style.cursor = 'default';
-            // If nothing hovered, revert HUD to selected selection or hide if none
-            if (selectedTargetId) {
-                updateHUD(selectedTargetId);
-            } else if (selectedSourceId) {
-                updateHUD(selectedSourceId);
-            } else {
-                // If nothing selected and nothing hovered, maybe hide?
-                // Keeping it visible might be annoying, let's leave last known or hide
-                // uiDiv.style.display = 'none'; // Optional: Auto-hide
-            }
         }
     }
 }
@@ -456,140 +471,120 @@ function onMouseClick(event) {
     if (event.target.closest('#game-ui') || event.target.closest('.navbar')) return;
 
     raycaster.setFromCamera(mouse, camera);
-    const allSprites = [];
-    Object.values(fortressMeshes).forEach(o => allSprites.push(o.iconSprite));
-    const intersects = raycaster.intersectObjects(allSprites, true);
+    const allMeshes = [];
+    Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
+    const intersects = raycaster.intersectObjects(allMeshes, true);
 
     if (intersects.length > 0) {
         let target = intersects[0].object;
+        while (target.parent && !target.userData.id) target = target.parent;
         const targetId = target.userData.id;
-        handleNodeSelection(targetId);
+        if (targetId) handleNodeSelection(targetId);
     } else {
-        // Deselect
         selectedSourceId = null;
         selectedTargetId = null;
-        uiDiv.style.display = 'none';
-        updatePathVisuals(); // Clears green lines
-        statusMsg.textContent = "";
+        if(uiDiv) uiDiv.style.display = 'none';
+        updatePathVisuals();
+        if(statusMsg) statusMsg.textContent = "";
     }
 }
 
 function handleNodeSelection(id) {
     const fortress = gameState.fortresses[id];
     
-    // Logic: 
-    // 1. If nothing selected -> Select Source (if own) or Just View (if enemy)
-    // 2. If Source selected -> Click another -> is it neighbor? Target. Is it self? Deselect. Is it other own? Change Source.
-
     if (selectedSourceId === null) {
         if (fortress.owner === playerUsername) {
             selectedSourceId = id;
-            statusMsg.textContent = "Orders: Select a connected destination.";
+            if(statusMsg) statusMsg.textContent = "Orders: Select a connected destination.";
         } else {
-            // Just viewing enemy
-            statusMsg.textContent = "Observing Enemy Position.";
+            if(statusMsg) statusMsg.textContent = "Observing Enemy Position.";
         }
         updateHUD(id);
     } 
     else {
-        // Source already active
         if (id === selectedSourceId) {
-            // Clicked self -> Deselect
             selectedSourceId = null;
             selectedTargetId = null;
-            statusMsg.textContent = "Selection Cleared.";
-            uiDiv.style.display = 'none';
+            if(statusMsg) statusMsg.textContent = "Selection Cleared.";
+            if(uiDiv) uiDiv.style.display = 'none';
         } else if (fortress.owner === playerUsername && !selectedTargetId) {
-            // Changed mind, picked different source
             selectedSourceId = id;
-            statusMsg.textContent = "New Source Selected.";
+            if(statusMsg) statusMsg.textContent = "New Source Selected.";
             updateHUD(id);
         } else {
-            // Clicked potential target
             const neighbors = gameState.adj[selectedSourceId] || [];
             if (neighbors.includes(parseInt(id))) {
                 selectedTargetId = id;
-                statusMsg.textContent = "Target Locked. Engage?";
+                if(statusMsg) statusMsg.textContent = "Target Locked. Engage?";
                 updateHUD(id);
             } else {
-                statusMsg.textContent = "Target out of range!";
+                if(statusMsg) statusMsg.textContent = "Target out of range!";
             }
         }
     }
-    updatePathVisuals(); // Updates highlighting
+    updatePathVisuals();
 }
 
 function updateHUD(id) {
     const f = gameState.fortresses[id];
-    if (!f) return;
+    if (!f || !uiDiv) return;
 
     uiDiv.style.display = 'block';
     
-    // Populate Data
-    uiTitle.textContent = f.is_capital ? `Capital (${id})` : `Fortress ${id}`;
+    if(uiTitle) uiTitle.textContent = f.is_capital ? `Capital (${id})` : `Fortress ${id}`;
+    if(uiType) uiType.textContent = f.type || "Unknown"; 
+    if(uiLand) uiLand.textContent = "Surface"; 
     
-    // Structure Type
-    // Map internal type key to Display Name if needed, currently using keys like "Keep", "Farm"
-    uiType.textContent = f.type; 
-
-    // Land Type (Approximation: Get dominant terrain of surrounding faces)
-    // For now, we will look at the face terrain of the first face attached to this vertex
-    // Ideally calculate the most common terrain type
-    uiLand.textContent = "Surface"; // Default
-    // Simple look up logic if we had vertex->face map handy. 
-    // Since we don't have vertex->face map in JS easily without recalculating, 
-    // we can approximate or skip. 
-    // Let's rely on the fact that faces have colors. 
-    // (Future: Pass terrain string in fortress data from python)
-
-    uiOwner.textContent = f.owner || "Neutral";
-    uiOwner.style.color = f.owner ? '#fff' : '#aaa';
+    if(uiOwner) {
+        uiOwner.textContent = f.owner || "Neutral";
+        uiOwner.style.color = f.owner ? '#fff' : '#aaa';
+    }
     
-    uiUnits.textContent = Math.floor(f.units);
-    uiTier.textContent = f.tier;
+    if(uiUnits) uiUnits.textContent = Math.floor(f.units);
+    if(uiTier) uiTier.textContent = f.tier;
     
-    if (f.owner && gameState.races[f.race]) {
-        uiSpecial.textContent = f.special_active ? "Active" : "Locked";
-        uiSpecial.style.color = f.special_active ? "#0f0" : "#aaa";
-    } else {
-        uiSpecial.textContent = "None";
+    if(uiSpecial) {
+        if (f.owner && gameState.races[f.race]) {
+            uiSpecial.textContent = f.special_active ? "Active" : "Locked";
+            uiSpecial.style.color = f.special_active ? "#0f0" : "#aaa";
+        } else {
+            uiSpecial.textContent = "None";
+        }
     }
 
-    // Interaction Buttons (Only if Source + Target selected)
     if (selectedSourceId && selectedTargetId && id === selectedTargetId) {
-        uiActionArea.style.display = 'block';
+        if(uiActionArea) uiActionArea.style.display = 'block';
         
         const sourceFort = gameState.fortresses[selectedSourceId];
         const isLinked = sourceFort.paths && sourceFort.paths.includes(selectedTargetId);
         
-        btnAction.disabled = false;
-        
-        if (isLinked) {
-            btnAction.textContent = "HALT ADVANCE";
-            btnAction.style.backgroundColor = "#ff9900";
-        } else {
-            const currentPaths = sourceFort.paths ? sourceFort.paths.length : 0;
-            const maxPaths = sourceFort.tier || 1;
-            
-            if (currentPaths >= maxPaths) {
-                btnAction.textContent = `MAX PATHS (${currentPaths}/${maxPaths})`;
-                btnAction.disabled = true;
-                btnAction.style.backgroundColor = "#555";
+        if (btnAction) {
+            btnAction.disabled = false;
+            if (isLinked) {
+                btnAction.textContent = "HALT ADVANCE";
+                btnAction.style.backgroundColor = "#ff9900";
             } else {
-                btnAction.textContent = "ESTABLISH SUPPLY LINE";
-                btnAction.style.backgroundColor = "#00cc00";
+                const currentPaths = sourceFort.paths ? sourceFort.paths.length : 0;
+                const maxPaths = sourceFort.tier || 1;
+                
+                if (currentPaths >= maxPaths) {
+                    btnAction.textContent = `MAX PATHS (${currentPaths}/${maxPaths})`;
+                    btnAction.disabled = true;
+                    btnAction.style.backgroundColor = "#555";
+                } else {
+                    btnAction.textContent = "ESTABLISH SUPPLY LINE";
+                    btnAction.style.backgroundColor = "#00cc00";
+                }
             }
+            btnAction.onclick = () => {
+                socket.emit('submit_move', {
+                    source: selectedSourceId,
+                    target: selectedTargetId
+                });
+            };
         }
-        
-        btnAction.onclick = () => {
-            socket.emit('submit_move', {
-                source: selectedSourceId,
-                target: selectedTargetId
-            });
-            // Don't close UI, let update reflect change
-        };
     } else {
-        uiActionArea.style.display = 'none';
+        if(uiActionArea) uiActionArea.style.display = 'none';
     }
 }
 
@@ -601,13 +596,8 @@ function onWindowResize() {
 
 function startAnimation() {
     const clock = new THREE.Clock();
-    
     function animate() {
         requestAnimationFrame(animate);
-        const dt = clock.getDelta();
-        
-        // Pulse effects or rotation can go here
-        
         controls.update();
         renderer.render(scene, camera);
     }

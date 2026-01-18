@@ -19,83 +19,61 @@
             height: 100vh;
         }
 
-        /* Navbar / Overlay */
+        /* Navbar */
         .navbar { 
             position: absolute;
-            top: 0; 
-            left: 0; 
-            width: 100%; 
+            top: 0; left: 0; width: 100%; 
             background: linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0)); 
-            padding: 15px; 
-            text-align: right; 
-            box-sizing: border-box; 
-            pointer-events: none; /* Let clicks pass through */
+            padding: 15px; text-align: right; box-sizing: border-box; 
+            pointer-events: none; z-index: 10;
         }
         .navbar a, .navbar span, .navbar button { 
-            pointer-events: auto;
-            color: white; 
-            margin-left: 15px;
-            text-decoration: none; 
-            font-weight: bold;
-            text-shadow: 0 0 5px #000;
+            pointer-events: auto; color: white; margin-left: 15px;
+            text-decoration: none; font-weight: bold; text-shadow: 0 0 5px #000;
         }
         .navbar button {
-            background: #d9534f;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
+            background: #d9534f; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;
         }
         .navbar button:hover { background: #c9302c; }
 
-        /* Game UI */
+        /* HUD */
         #game-ui {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 300px;
-            background: rgba(20, 20, 30, 0.9);
-            border: 1px solid #445;
+            bottom: 20px; right: 20px; width: 320px;
+            background: rgba(15, 15, 25, 0.95);
+            border: 2px solid #556;
             border-radius: 12px;
             padding: 20px;
             color: #eee;
-            box-shadow: 0 0 20px rgba(0,0,0,0.8);
-            display: none; /* Hidden until selection */
+            box-shadow: 0 0 25px rgba(0,0,0,0.9);
+            display: none; 
             pointer-events: auto;
+            z-index: 10;
         }
         
-        #game-ui h3 { margin-top: 0; border-bottom: 1px solid #556; padding-bottom: 10px; }
+        #game-ui h3 { margin-top: 0; border-bottom: 1px solid #778; padding-bottom: 10px; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
         
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-        .stat-label { color: #aaa; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .stat-label { color: #aaa; font-weight: bold; }
+        .stat-val { font-family: monospace; font-size: 1.1em; }
         
         #slider-container { margin-top: 20px; text-align: center; }
-        input[type=range] { width: 100%; accent-color: #007bff; }
+        input[type=range] { width: 100%; accent-color: #007bff; cursor: pointer; }
         
         button#btn-action {
-            width: 100%;
-            padding: 12px;
-            margin-top: 15px;
-            background: #007bff;
-            border: none;
-            border-radius: 6px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.2s;
+            width: 100%; padding: 12px; margin-top: 15px;
+            background: #007bff; border: none; border-radius: 6px;
+            color: white; font-weight: bold; font-size: 1.1em; cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
         }
-        button#btn-action:hover { background: #0056b3; }
-        button#btn-action:disabled { background: #444; cursor: not-allowed; }
+        button#btn-action:hover { background: #0056b3; transform: scale(1.02); }
+        button#btn-action:disabled { background: #444; cursor: not-allowed; transform: none; }
         
         #status-msg {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #ffcc00;
-            font-size: 18px;
-            text-shadow: 0 2px 4px #000;
-            pointer-events: none;
+            position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+            color: #ffcc00; font-size: 20px; font-weight: bold;
+            text-shadow: 0 2px 4px #000; pointer-events: none;
+            background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px;
         }
     </style>
 </head>
@@ -103,39 +81,49 @@
     <div id="app-container">
         <div class="navbar">
             {% if current_user.is_authenticated %}
-                <span>Commander {{ user.username }} ({{ user.user_doc.get('race', 'Human') }})</span>
+                <span>Commander {{ user.username }}</span>
                 <button id="btn-restart">Restart Game</button>
-                <a href="{{ url_for('logout') }}">Retreat (Logout)</a>
+                <a href="{{ url_for('logout') }}">Retreat</a>
             {% else %}
                 <a href="{{ url_for('login') }}">Login</a>
             {% endif %}
         </div>
         
         <span id="username" style="display: none;">{{ user.username }}</span>
-
         <div id="status-msg"></div>
-
         <div id="canvas-container"></div>
 
         <div id="game-ui">
             <h3 id="ui-title">Fortress</h3>
+            
             <div class="stat-row">
-                <span class="stat-label">Owner:</span>
-                <span id="ui-owner">Neutral</span>
+                <span class="stat-label">Land Type:</span>
+                <span id="ui-land" class="stat-val">Unknown</span>
             </div>
             <div class="stat-row">
-                <span class="stat-label">Units:</span>
-                <span id="ui-units">0</span>
+                <span class="stat-label">Structure:</span>
+                <span id="ui-type" class="stat-val">Keep</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Owner:</span>
+                <span id="ui-owner" class="stat-val">Neutral</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Garrison:</span>
+                <span id="ui-units" class="stat-val">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Tier:</span>
+                <span id="ui-tier" class="stat-val">1</span>
             </div>
             <div class="stat-row">
                 <span class="stat-label">Special:</span>
-                <span id="ui-special">Inactive</span>
+                <span id="ui-special" class="stat-val">Inactive</span>
             </div>
             
             <div id="action-area" style="display:none;">
-                <hr style="border-color: #445;">
                 <div id="slider-container">
-                    <label>Send Units: <span id="ui-send-val">0</span></label>
+                    <label>Send Units</label>
                     <input type="range" id="unit-slider" min="1" max="100" value="50">
                 </div>
                 <button id="btn-action">SELECT TARGET</button>

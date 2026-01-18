@@ -299,7 +299,6 @@ def generate_game_world():
     game_state["fortresses"] = {}
     
     # --- Identify Water-Locked Vertices ---
-    # Map vertices to faces
     vertex_faces = {i: [] for i in range(len(vertices))}
     for f_idx, face in enumerate(faces):
         for v_idx in face:
@@ -336,17 +335,16 @@ def process_ai_turn():
     """AI Logic scaled by Difficulty."""
     ai_profile = AI_PROFILES.get(AI_DIFFICULTY, AI_PROFILES["Normal"])
     
-    # Simulate reaction delay (simple skip turn chance)
+    # Simulate reaction delay
     if random.randint(0, 10) < ai_profile["reaction_delay"]:
         return
 
     ai_forts = [f for f in game_state["fortresses"].values() if f['owner'] == AI_NAME]
     
     for fort in ai_forts:
-        # Upgrade Logic (Cost vs Value)
+        # Upgrade Logic
         cost_next = UPGRADE_COST_TIER_2 if fort['tier'] == 1 else UPGRADE_COST_TIER_3 if fort['tier'] == 2 else 9999
         if fort['units'] > cost_next * 1.5 and fort['tier'] < 3:
-             # Upgrade
              fort['units'] -= cost_next
              fort['tier'] += 1
         
@@ -361,20 +359,16 @@ def process_ai_turn():
                  if str(n_id) in fort['paths']: continue
                  target = game_state["fortresses"].get(str(n_id))
                  
-                 # Skip invalid/disabled targets
                  if not target or target.get('disabled'): continue
                  
                  # AI Evaluation Score
                  score = 0
-                 # Prefer weak targets
                  score -= target['units']
-                 # Prefer capturing Neutral/Enemy over reinforcing (based on aggression)
                  if target['owner'] != AI_NAME:
                      score += 50 * ai_profile["expand_bias"]
                  else:
-                     score -= 20 # Only reinforce if desperate
+                     score -= 20 
                  
-                 # Type preference? Capture Farms!
                  if target['type'] == 'Farm': score += 20
                  
                  if score > score_best:
@@ -393,7 +387,6 @@ def background_thread():
         changes_made = False
         
         # 0. Check Sector Dominance (High Ground)
-        # Reset current ownership map
         face_ownership = {}
         for idx, face in enumerate(game_state["faces"]):
             v1, v2, v3 = [str(x) for x in face]
@@ -403,14 +396,11 @@ def background_thread():
             
             if o1 and o1 == o2 and o2 == o3:
                 face_ownership[str(idx)] = o1
-                # Visual: This will be sent to client to light up face
             else:
                 face_ownership[str(idx)] = None
         
         if face_ownership != game_state.get("sector_owners", {}):
             game_state["sector_owners"] = face_ownership
-            # We could emit a special event here if needed
-            # For now, client just sees face colors update (not implemented in JS yet)
         
         # Run AI
         process_ai_turn()
@@ -421,10 +411,6 @@ def background_thread():
             f_type_stats = FORTRESS_TYPES[fort['type']]
             
             # 1. Passive Growth
-            # Rules: Only if units < Capacity.
-            # Bonus: If Sector Dominance active for any adjacent face?
-            
-            # Check Sector Dominance for this vertex
             has_dominance_bonus = False
             vertex_faces = [i for i, f in enumerate(game_state["faces"]) if int(fid) in f]
             for face_idx in vertex_faces:
@@ -435,7 +421,7 @@ def background_thread():
             cap = f_type_stats['cap']
             if fort['owner'] and fort['units'] < cap:
                 growth = 1.0 * f_type_stats['gen_mult']
-                if has_dominance_bonus: growth *= 1.5 # High Ground Bonus
+                if has_dominance_bonus: growth *= 1.5
                 
                 fort['units'] = min(cap, fort['units'] + growth)
                 changes_made = True
@@ -449,23 +435,19 @@ def background_thread():
                     amount = FLOW_RATE
                     
                     if target['owner'] == fort['owner']:
-                        # Reinforce (Check cap at destination? Usually reinforcements can overflow slightly or soft cap)
-                        # Let's allow overflow for reinforcements up to 2x cap
+                        # Reinforce
                         t_type = FORTRESS_TYPES[target['type']]
                         if target['units'] < t_type['cap'] * 2:
                             target['units'] += amount
                     else:
                         # Attack
-                        # Defender Stats
                         def_type = FORTRESS_TYPES[target['type']]
                         def_race = RACES.get(target['race'], RACES["Neutral"])
                         def_mult = def_race.get('base_def', 1.0) * def_type['def_mod']
                         
-                        # Attacker Stats
-                        atk_type = FORTRESS_TYPES[fort['type']] # Units carry source stats
+                        atk_type = FORTRESS_TYPES[fort['type']] 
                         atk_race = RACES.get(fort['race'], RACES["Human"])
                         
-                        # Sector Dominance Attack Bonus
                         bonus = 1.0
                         if has_dominance_bonus: bonus = 1.5
                         if fort['special_active']: bonus *= atk_race.get('special_bonus', 1.0)
@@ -481,8 +463,7 @@ def background_thread():
                             target['race'] = fort['race']
                             target['units'] = 1.0
                             target['paths'] = []
-                            target['tier'] = 1 # Reset tier on capture
-                            # Type remains the same (Permanent Map Feature)
+                            target['tier'] = 1 
                         else:
                             # Defended
                             new_def_power = defense_val - damage
@@ -490,21 +471,16 @@ def background_thread():
                     
                     changes_made = True
             
-            # 3. Handle Auto-Upgrade (Optional, since we added cost)
-            # If we want manual upgrade, we need UI events. 
-            # For now, let's keep it automatic BUT consume resources as per rule.
-            # "Upgrading costs X units"
-            
+            # 3. Handle Auto-Upgrade
             current_tier = fort['tier']
             if current_tier < 3:
                 cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
-                # Only auto-upgrade if we have significant overhead (e.g. 10 units buffer)
                 if fort['units'] >= cost + 10:
                     fort['units'] -= cost
                     fort['tier'] += 1
                     changes_made = True
 
-            # Prune paths if tier dropped (shouldn't happen unless logic changes, but safe to keep)
+            # Prune paths
             if len(fort['paths']) > fort['tier']:
                 fort['paths'] = fort['paths'][:fort['tier']]
 
@@ -587,17 +563,16 @@ def create_app():
     @socketio.on('restart_game')
     @login_required
     def handle_restart():
-        # Reset game world
         generate_game_world()
         game_state["sector_owners"] = {}
         # Re-assign home for current user
         assign_home_sector(current_user)
-        # Broadcast full update
         emit('update_map', game_state["fortresses"], broadcast=True)
         emit('update_face_colors', game_state["face_colors"], broadcast=True)
 
     def assign_home_sector(user):
         """Assigns a full triangular sector (3 vertices) to the player."""
+        # 0. Check if user already owns something
         for f in game_state["fortresses"].values():
             if f['owner'] == user.username: return # Already spawned
         
@@ -605,46 +580,53 @@ def create_app():
         spawn_ai_sector()
         
         # 2. Spawn Player
-        # Find a valid face (not Sea/Deep Sea/Mountain)
-        available_faces = list(enumerate(game_state["faces"]))
-        random.shuffle(available_faces)
+        # Helper to try finding spots
+        def try_spawn(allowed_terrains=None):
+            available_faces = list(enumerate(game_state["faces"]))
+            random.shuffle(available_faces)
 
-        for i, face in available_faces:
-            terrain = game_state.get("face_terrain", [])[i]
-            if terrain in ["Deep Sea", "Sea", "Mountain"]: continue
-            
-            v1, v2, v3 = [str(x) for x in face]
-            f1 = game_state["fortresses"].get(v1)
-            f2 = game_state["fortresses"].get(v2)
-            f3 = game_state["fortresses"].get(v3)
-            
-            # Ensure none are disabled or owned
-            if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
-            if f1['owner'] or f2['owner'] or f3['owner']: continue
+            for i, face in available_faces:
+                terrain = game_state.get("face_terrain", [])[i]
+                
+                # Filter terrain if constraints provided
+                if allowed_terrains and terrain not in allowed_terrains: continue
+                # Skip invalid zones (Deep Sea/Sea always bad for home base)
+                if terrain in ["Deep Sea", "Sea"]: continue
+                
+                v1, v2, v3 = [str(x) for x in face]
+                f1 = game_state["fortresses"].get(v1)
+                f2 = game_state["fortresses"].get(v2)
+                f3 = game_state["fortresses"].get(v3)
+                
+                if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
+                if f1['owner'] or f2['owner'] or f3['owner']: continue
 
-            # Setup Home Sector
-            race_color = RACES["Human"]["color"]
-            game_state["face_colors"][i] = darken_color(race_color, factor=0.4)
+                # SUCCESS: Found a spot
+                race_color = RACES["Human"]["color"]
+                game_state["face_colors"][i] = darken_color(race_color, factor=0.4)
+                
+                units_per_base = STARTING_UNITS_POOL // 3
+                for vid in [v1, v2, v3]:
+                    game_state["fortresses"][vid].update({
+                        "owner": user.username, 
+                        "units": units_per_base, 
+                        "race": "Human",
+                        "is_capital": True, 
+                        "special_active": True, 
+                        "tier": 1, 
+                        "paths": []
+                    })
+                game_state["sector_owners"][str(i)] = user.username
+                return True
+            return False
+
+        # Try Tier 1: Good lands only
+        if not try_spawn(allowed_terrains=["Plain", "Hill", "Forest", "Farm"]):
+            # Try Tier 2: Anything not Water
+            try_spawn(allowed_terrains=None)
             
-            # Distribute Starting Pool
-            units_per_base = STARTING_UNITS_POOL // 3
-            
-            for vid in [v1, v2, v3]:
-                game_state["fortresses"][vid].update({
-                    "owner": user.username, 
-                    "units": units_per_base, 
-                    "race": "Human",
-                    "is_capital": True, 
-                    "special_active": True, # Home sector active by default
-                    "tier": 1, 
-                    "paths": []
-                })
-            
-            # Mark sector ownership
-            game_state["sector_owners"][str(i)] = user.username
-            
-            emit('update_face_colors', game_state["face_colors"], broadcast=True)
-            return
+        emit('update_face_colors', game_state["face_colors"], broadcast=True)
+        emit('update_map', game_state["fortresses"], broadcast=True) # Force map update immediately
 
     def spawn_ai_sector():
         for f in game_state["fortresses"].values():
@@ -684,7 +666,6 @@ def create_app():
         if src_fort['owner'] != current_user.username: return
         if src_fort.get('disabled'): return
         
-        # Check valid road (already filtered in game_state["adj"])
         if int(tgt_id) not in game_state["adj"].get(int(src_id), []): return
 
         if tgt_id in src_fort['paths']: src_fort['paths'].remove(tgt_id)
