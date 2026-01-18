@@ -2,6 +2,9 @@
 
 // --- Configuration ---
 const COLORS = {
+    background: 0x050510,
+    globeBase: 0x151525,     // Dark planet surface
+    globeEmissive: 0x000000,
     neutral: 0x555555,
     highlight: 0xffff00,
     connection: 0x444444,
@@ -37,10 +40,10 @@ const statusMsg = document.getElementById('status-msg');
 function init() {
     // 1. Scene Setup
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050510);
+    scene.background = new THREE.Color(COLORS.background);
     
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = 4;
+    camera.position.z = 3.5;
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -49,13 +52,21 @@ function init() {
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
+    controls.minDistance = 2;
+    controls.maxDistance = 10;
 
     // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
+    
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(5, 10, 7);
+    dirLight.position.set(10, 10, 10);
     scene.add(dirLight);
+    
+    // Backlight for dramatic effect
+    const backLight = new THREE.DirectionalLight(0x4444ff, 0.3);
+    backLight.position.set(-10, -5, -10);
+    scene.add(backLight);
 
     // 2. Fetch Game Data
     fetch('/api/gamestate')
@@ -78,12 +89,36 @@ function init() {
 }
 
 function buildWorld(data) {
-    // 1. Create Fortresses (Vertices)
-    const geometry = new THREE.SphereGeometry(0.1, 16, 16);
+    // 1. Create the Globe Surface (The Icosphere)
+    // We flatten the arrays because BufferGeometry expects simple 1D arrays
+    const verticesFlat = data.vertices.flat();
+    const indicesFlat = data.faces.flat();
+
+    const globeGeo = new THREE.BufferGeometry();
+    globeGeo.setAttribute('position', new THREE.Float32BufferAttribute(verticesFlat, 3));
+    globeGeo.setIndex(indicesFlat);
+    globeGeo.computeVertexNormals();
+
+    const globeMat = new THREE.MeshPhongMaterial({
+        color: COLORS.globeBase,
+        emissive: COLORS.globeEmissive,
+        shininess: 15,
+        flatShading: true, // This gives the "low poly" triangle look you want
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: 1, // Push the surface back slightly so roads/fortresses show clearly
+        polygonOffsetUnits: 1
+    });
+
+    const globeMesh = new THREE.Mesh(globeGeo, globeMat);
+    scene.add(globeMesh);
+
+    // 2. Create Fortresses (Vertices)
+    const fortressGeo = new THREE.SphereGeometry(0.06, 16, 16); // Slightly smaller to look like nodes
     
     data.vertices.forEach((v, index) => {
         const material = new THREE.MeshPhongMaterial({ color: COLORS.neutral });
-        const mesh = new THREE.Mesh(geometry, material);
+        const mesh = new THREE.Mesh(fortressGeo, material);
         
         mesh.position.set(v[0], v[1], v[2]);
         mesh.userData = { id: index.toString(), type: 'fortress' };
@@ -92,8 +127,12 @@ function buildWorld(data) {
         fortressMeshes[index.toString()] = mesh;
     });
 
-    // 2. Create Roads (Edges)
-    const lineMaterial = new THREE.LineBasicMaterial({ color: COLORS.connection, transparent: true, opacity: 0.4 });
+    // 3. Create Roads (Edges)
+    const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: COLORS.connection, 
+        transparent: true, 
+        opacity: 0.3 
+    });
     
     data.roads.forEach(road => {
         const v1 = new THREE.Vector3(...data.vertices[road[0]]);
@@ -105,7 +144,7 @@ function buildWorld(data) {
         connectionLines.push(line);
     });
     
-    // 3. Initial Visual Update
+    // 4. Initial Visual Update
     updateVisuals(data.fortresses);
 }
 
@@ -137,8 +176,8 @@ function updateVisuals(fortresses) {
         }
         
         // Scale (Visual indicator of garrison size)
-        // Base scale 1.0, max scale 2.5 for 100 units
-        const scale = 1.0 + Math.min(data.units, 100) / 70.0;
+        // Base scale 1.0, scales up with units
+        const scale = 1.0 + Math.min(data.units, 100) / 100.0;
         mesh.scale.set(scale, scale, scale);
         
         // Special Effect (Emission if special active)
@@ -158,8 +197,6 @@ const mouse = new THREE.Vector2();
 function onMouseMove(event) {
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    
-    // Highlight logic could go here
 }
 
 function onMouseClick(event) {
@@ -209,13 +246,8 @@ function handleNodeSelection(id) {
         }
         
         // Check if connected
-        const sourceIdInt = parseInt(selectedSourceId);
-        const targetIdInt = parseInt(id);
-        
-        // Check adjacency in our cached local map?
-        // Actually, we can check basic distance or existing adjacency list from server
-        // Using server list:
         const neighbors = gameState.adj[selectedSourceId]; // Array of numbers
+        const targetIdInt = parseInt(id);
         
         if (neighbors && neighbors.includes(targetIdInt)) {
             // Execute Move
