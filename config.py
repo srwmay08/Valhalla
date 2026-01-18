@@ -48,6 +48,14 @@ NEUTRAL_GARRISON = 5
 NPC_STARTING_NODES = 2 # How many bases the NPC starts with
 NPC_MOVE_INTERVAL = 3.0 # Seconds between NPC moves
 
+# --- Game Mechanics ---
+TIER_2_THRESHOLD = 50
+TIER_3_THRESHOLD = 120
+PASSIVE_GROWTH = 1.0     # Units gained per tick if idle
+FLOW_RATE = 0.5          # Units delivered per tick per path
+TICK_RATE = 1.0          # 1 Second per tick for precise timing
+AI_NAME = "Gorgon"
+
 # --- Visual Settings ---
 PLAYER_COLORS = [(255,0,0), (0,0,255), (0,255,255), (255,255,0)]
 COLOR_NEUTRAL = 0x888888
