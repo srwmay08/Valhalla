@@ -172,11 +172,9 @@ def create_app():
         if not game_state["initialized"]: 
             world_data = world_engine.generate_game_world()
             game_state.update(world_data)
-            # Pass game_state to initialize_fortresses for terrain checking
             game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
             game_state["initialized"] = True
-            
-        # Need to include constants for frontend
+                    # Need to include constants for frontend
         from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
         return jsonify({
             "vertices": game_state["vertices"], "faces": game_state["faces"],

@@ -4,12 +4,12 @@ export class GameClient {
         this.socket = io();
         this.callbacks = callbacks;
         
-        this.username = document.getElementById('username').innerText; // Matches HTML
+        this.username = document.getElementById('username').innerText; 
         this.gameState = {
             fortresses: {},
             vertices: [],
             faces: [],
-            terrain_build_options: {}, // Will be populated from API
+            terrain_build_options: {}, 
             fortress_types: {}
         };
 
@@ -21,11 +21,15 @@ export class GameClient {
             console.log("Connected via Socket.IO");
             // Request initial state
             fetch('/api/gamestate')
-                .then(r => r.json())
+                .then(r => {
+                    if (!r.ok) throw new Error("API Error: " + r.statusText);
+                    return r.json();
+                })
                 .then(data => {
                     this.gameState = data;
                     if (this.callbacks.onInit) this.callbacks.onInit(data);
-                });
+                })
+                .catch(err => console.error("Failed to load game state:", err));
         });
 
         this.socket.on('update_map', (fortresses) => {
