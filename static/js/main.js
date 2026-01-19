@@ -22,6 +22,7 @@ let fortressMeshes = {};
 let lineMap = {}; 
 let activeArrows = []; 
 let sectorIcons = {}; 
+let interactables = []; // Objects to raycast against
 
 let globeMesh = null;    
 
@@ -32,7 +33,7 @@ let selectedTargetId = null;
 // Dragging State
 let isDragging = false;
 let dragSourceId = null;
-let dragArrowGroup = null; // Container for Shaft + Head
+let dragArrowGroup = null; 
 
 const playerUsername = document.getElementById('username') ? document.getElementById('username').textContent.trim() : "Player";
 const socket = io();
@@ -67,7 +68,7 @@ function init() {
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.minDistance = 2.5;
+    controls.minDistance = 2.0;
     controls.maxDistance = 12;
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -87,20 +88,18 @@ function init() {
     // --- Initialize Drag Arrow Visuals ---
     dragArrowGroup = new THREE.Group();
     
-    // 1. Shaft (Cylinder)
-    // Default cylinder is height 1, centered at 0. We will scale/position it manually.
-    const shaftGeo = new THREE.CylinderGeometry(0.02, 0.02, 1, 8);
-    shaftGeo.rotateX(-Math.PI / 2); // Point along Z axis
-    // Translate geometry so Z=0 is the start, Z=1 is the end (simplifies scaling)
+    // Shaft
+    const shaftGeo = new THREE.CylinderGeometry(0.03, 0.03, 1, 8);
+    shaftGeo.rotateX(-Math.PI / 2); 
     shaftGeo.translate(0, 0, 0.5); 
     const shaftMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const shaftMesh = new THREE.Mesh(shaftGeo, shaftMat);
     shaftMesh.name = "shaft";
     dragArrowGroup.add(shaftMesh);
 
-    // 2. Head (Cone)
-    const headGeo = new THREE.ConeGeometry(0.06, 0.15, 8);
-    headGeo.rotateX(Math.PI / 2); // Point along Z axis
+    // Head
+    const headGeo = new THREE.ConeGeometry(0.08, 0.2, 8);
+    headGeo.rotateX(Math.PI / 2); 
     const headMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const headMesh = new THREE.Mesh(headGeo, headMat);
     headMesh.name = "head";
@@ -120,7 +119,7 @@ function init() {
     window.addEventListener('resize', onWindowResize);
     
     // Interaction Listeners
-    window.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
 }
@@ -128,28 +127,28 @@ function init() {
 // --- Visual Helpers ---
 
 function createLabelTexture(units, tier) {
-    const size = 128; 
+    const size = 256; 
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Unit Count
+    // 1. Draw Number
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 50px Arial"; 
+    ctx.font = "bold 100px Arial"; 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.shadowColor = "rgba(0,0,0,1.0)";
-    ctx.shadowBlur = 4;
-    ctx.fillText(Math.floor(units).toString(), size/2, size/2 - 10);
+    ctx.shadowBlur = 6;
+    ctx.fillText(Math.floor(units).toString(), size/2, size * 0.4);
 
-    // Tier Circles
-    const radius = 6;
-    const gap = 18;
+    // 2. Draw Tier Circles
+    const radius = 12;
+    const gap = 35;
     const startX = (size/2) - gap;
-    const y = (size/2) + 30;
+    const y = size * 0.75;
 
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 4;
     ctx.strokeStyle = "#000000"; 
     ctx.shadowBlur = 0; 
 
@@ -163,44 +162,71 @@ function createLabelTexture(units, tier) {
             ctx.fillStyle = "#ffffff";
             ctx.fill();
         } else {
-            ctx.fillStyle = "rgba(0,0,0,0.5)"; 
+            ctx.fillStyle = "rgba(0,0,0,0.6)"; 
             ctx.fill();
         }
     }
 
-    const tex = new THREE.CanvasTexture(canvas);
-    return tex;
+    return new THREE.CanvasTexture(canvas);
 }
 
 function createFortressMesh(data) {
     const group = new THREE.Group();
     
-    // Determine Color (Team Color Top-to-Bottom)
+    // Determine Color
     let baseColor = COLORS.neutral;
     if (data.owner) {
         const raceInfo = gameState.races[data.race];
         if (raceInfo) baseColor = raceInfo.color;
     }
     
-    // Single Material for entire structure
-    const mat = new THREE.MeshPhongMaterial({ color: baseColor, flatShading: true });
-    
-    // --- REDUCED HEIGHTS ---
-    // 1. Base Cylinder
-    const baseGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.06, 6); // Short base
-    const baseMesh = new THREE.Mesh(baseGeo, mat);
-    baseMesh.position.y = 0.03; // Centered vertically relative to size
+    // --- 1. Base (Solid Colored "Cup" Bottom) ---
+    const baseMat = new THREE.MeshPhongMaterial({ color: baseColor, flatShading: true });
+    // Height 0.04. Position y=0.02.
+    const baseGeo = new THREE.CylinderGeometry(0.06, 0.07, 0.04, 6); 
+    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+    baseMesh.position.y = 0.02; 
     baseMesh.rotation.y = Math.random() * Math.PI;
     group.add(baseMesh);
 
-    // 2. Roof Cone
-    const roofGeo = new THREE.ConeGeometry(0.07, 0.06, 6); // Short roof
-    const roofMesh = new THREE.Mesh(roofGeo, mat);
-    roofMesh.position.y = 0.09; // Sit on top of 0.06 height base
-    roofMesh.rotation.y = baseMesh.rotation.y; 
-    group.add(roofMesh);
+    // --- 2. Walls (Transparent/Open Top) ---
+    // Make the walls semi-transparent so you can see text through them but they still exist
+    const wallMat = new THREE.MeshBasicMaterial({ 
+        color: baseColor, 
+        transparent: true, 
+        opacity: 0.3, 
+        side: THREE.DoubleSide 
+    });
+    // Open ended cylinder (walls only)
+    const wallGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.06, 6, 1, true);
+    const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+    wallMesh.position.y = 0.07; // Stack on base (0.04 + 0.03)
+    wallMesh.rotation.y = baseMesh.rotation.y;
+    group.add(wallMesh);
+    
+    // --- 3. Invisible Hitbox (Critical for Click/Drag) ---
+    // Creates a large invisible cylinder around the tower to catch mouse clicks from any angle
+    const hitGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.15, 8);
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false }); // Three.js raycaster ignores invisible by default?
+    // Correction: Raycaster DOES check invisible objects if you pass them directly. 
+    // We will ensure we pass this mesh to the raycaster.
+    const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+    hitMesh.position.y = 0.05;
+    hitMesh.userData = { isHitbox: true }; 
+    group.add(hitMesh);
 
-    // 3. Icon Sprite
+    // --- 4. Floating HUD Inside "Cup" ---
+    
+    // A. Info Label (Number + Dots)
+    // Sits inside the transparent walls
+    const labelTex = createLabelTexture(data.units, data.tier);
+    const labelMat = new THREE.SpriteMaterial({ map: labelTex });
+    const labelSprite = new THREE.Sprite(labelMat);
+    labelSprite.scale.set(0.22, 0.22, 1);
+    labelSprite.position.y = 0.06; // Inside the walls
+    group.add(labelSprite);
+
+    // B. Icon Sprite
     let iconName = "keep.png"; 
     if (gameState.fortress_types && gameState.fortress_types[data.type]) {
         iconName = gameState.fortress_types[data.type].icon || "keep.png";
@@ -208,24 +234,16 @@ function createFortressMesh(data) {
     const iconMap = new THREE.TextureLoader().load('/static/icons/' + iconName);
     const iconMat = new THREE.SpriteMaterial({ map: iconMap, color: 0xffffff });
     const iconSprite = new THREE.Sprite(iconMat);
-    // Position: Lowered significantly
-    iconSprite.scale.set(0.12, 0.12, 1); 
-    iconSprite.position.y = 0.18; 
+    iconSprite.scale.set(0.10, 0.10, 1); 
+    iconSprite.position.y = 0.13; // Just peeking out top
     group.add(iconSprite);
 
-    // 4. Info Label
-    const labelTex = createLabelTexture(data.units, data.tier);
-    const labelMat = new THREE.SpriteMaterial({ map: labelTex });
-    const labelSprite = new THREE.Sprite(labelMat);
-    labelSprite.scale.set(0.15, 0.15, 1);
-    labelSprite.position.y = 0.18; 
-    labelSprite.position.z = 0.02; 
-    group.add(labelSprite);
-
-    return { group, baseMesh, roofMesh, iconSprite, labelSprite };
+    return { group, baseMesh, wallMesh, hitMesh, iconSprite, labelSprite };
 }
 
 function buildWorld(data) {
+    interactables = [];
+
     // 1. Globe
     const positions = []; const colors = []; const colorHelper = new THREE.Color();
     data.faces.forEach((face, faceIndex) => {
@@ -254,21 +272,25 @@ function buildWorld(data) {
         const fortressData = data.fortresses[index.toString()];
         if (!fortressData || fortressData.disabled) return;
 
-        const { group, baseMesh, roofMesh, iconSprite, labelSprite } = createFortressMesh(fortressData);
+        const { group, baseMesh, wallMesh, hitMesh, iconSprite, labelSprite } = createFortressMesh(fortressData);
         group.position.set(v[0], v[1], v[2]);
         
         const up = new THREE.Vector3(v[0], v[1], v[2]).normalize();
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
 
-        // Metadata for Raycaster
+        // Metadata
         group.userData = { id: index.toString(), type: 'fortress' };
+        // IMPORTANT: Tag every child so raycaster finds the ID
         group.children.forEach(c => c.userData = { id: index.toString(), type: 'fortress' });
         
         scene.add(group);
-        fortressMeshes[index.toString()] = { mesh: group, baseMesh, roofMesh, iconSprite, labelSprite };
+        fortressMeshes[index.toString()] = { mesh: group, baseMesh, wallMesh };
+        
+        // Add to interactables for raycasting
+        interactables.push(group);
     });
 
-    // 3. Roads (Lines)
+    // 3. Roads
     const lineMat = new THREE.LineBasicMaterial({ color: COLORS.connection, linewidth: 1 });
     lineMap = {};
     
@@ -293,34 +315,62 @@ function buildWorld(data) {
     updateSectorVisuals();
 }
 
+// 3D Crystal Generation for Sector Dominance
+function createSectorCrystal(colorHex) {
+    const geo = new THREE.OctahedronGeometry(1, 0);
+    const mat = new THREE.MeshPhongMaterial({ 
+        color: colorHex, 
+        emissive: colorHex, 
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity: 0.8,
+        flatShading: true
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    return mesh;
+}
+
 function updateSectorVisuals() {
     if (!gameState.sector_owners) return;
-    const dominanceTex = new THREE.TextureLoader().load('/static/icons/star_shield.png'); 
 
     for (let faceIdx = 0; faceIdx < gameState.faces.length; faceIdx++) {
         const owner = gameState.sector_owners[faceIdx.toString()];
         
+        // Remove existing icon if no owner or owner changed
         if (sectorIcons[faceIdx]) {
-            if (!owner) {
+            if (!owner || sectorIcons[faceIdx].userData.owner !== owner) {
                 scene.remove(sectorIcons[faceIdx]);
                 delete sectorIcons[faceIdx];
             }
-        } else if (owner) {
-            const mat = new THREE.SpriteMaterial({ map: dominanceTex, color: 0xffff00 });
-            const sprite = new THREE.Sprite(mat);
+        }
+        
+        if (owner && !sectorIcons[faceIdx]) {
+            // Determine Color
+            let c = 0xffff00; // Gold default
+            // Try to find race color from one of the forts
+            const v0 = gameState.faces[faceIdx][0];
+            const fort = gameState.fortresses[v0.toString()];
+            if (fort && gameState.races[fort.race]) {
+                c = gameState.races[fort.race].color;
+            }
+
+            const crystal = createSectorCrystal(c);
             
+            // Calc Center
             const face = gameState.faces[faceIdx];
             const v1 = new THREE.Vector3(...gameState.vertices[face[0]]);
             const v2 = new THREE.Vector3(...gameState.vertices[face[1]]);
             const v3 = new THREE.Vector3(...gameState.vertices[face[2]]);
             
             const center = new THREE.Vector3().addVectors(v1, v2).add(v3).divideScalar(3);
-            center.multiplyScalar(1.03); 
+            center.multiplyScalar(1.05); // Float above surface
             
-            sprite.position.copy(center);
-            sprite.scale.set(0.1, 0.1, 1); 
-            scene.add(sprite);
-            sectorIcons[faceIdx] = sprite;
+            crystal.position.copy(center);
+            crystal.scale.set(0.08, 0.08, 0.08); 
+            crystal.userData = { owner: owner }; 
+            
+            scene.add(crystal);
+            sectorIcons[faceIdx] = crystal;
         }
     }
 }
@@ -335,7 +385,6 @@ function updatePathVisuals() {
     activeArrows.forEach(arrow => scene.remove(arrow));
     activeArrows = [];
 
-    // Highlight Valid Neighbors of Selected
     if (selectedSourceId) {
         const neighbors = gameState.adj[selectedSourceId] || [];
         neighbors.forEach(nId => {
@@ -364,7 +413,6 @@ function updatePathVisuals() {
             if (!gameState.fortresses[targetId]) return;
             const p2 = fortressMeshes[targetId].mesh.position;
             
-            // Highlight Line
             const u = parseInt(id);
             const v = parseInt(targetId);
             const key = u < v ? `${u}_${v}` : `${v}_${u}`;
@@ -374,7 +422,6 @@ function updatePathVisuals() {
                 line.material.opacity = 1.0;
             }
 
-            // Draw Arrow
             const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
             const dist = p1.distanceTo(p2);
             const arrowPos = p1.clone().add(dir.clone().multiplyScalar(dist * 0.35));
@@ -397,25 +444,15 @@ function updateVisuals(fortresses) {
         let obj = fortressMeshes[id];
         if (!obj) continue;
 
-        // Texture Update
-        const currentUnits = Math.floor(data.units);
-        if (obj.lastUnits !== currentUnits || obj.lastTier !== data.tier) {
-            const newTex = createLabelTexture(data.units, data.tier);
-            obj.labelSprite.material.map = newTex;
-            obj.labelSprite.material.needsUpdate = true;
-            obj.lastUnits = currentUnits;
-            obj.lastTier = data.tier;
-        }
-
-        // Color Update for 3D Mesh
+        // Color Update
         if (data.owner) {
             const raceInfo = gameState.races[data.race];
             const c = raceInfo ? raceInfo.color : COLORS.neutral;
             obj.baseMesh.material.color.setHex(c);
-            obj.roofMesh.material.color.setHex(c);
+            obj.wallMesh.material.color.setHex(c);
         } else {
             obj.baseMesh.material.color.setHex(COLORS.neutral);
-            obj.roofMesh.material.color.setHex(COLORS.neutral);
+            obj.wallMesh.material.color.setHex(COLORS.neutral);
         }
     }
     updatePathVisuals();
@@ -449,6 +486,16 @@ socket.on('update_face_colors', (faceColors) => {
     updateSectorVisuals();
 });
 
+// Camera Focus Listener
+socket.on('focus_camera', (data) => {
+    console.log("CLIENT: Moving camera to", data.position);
+    if (data.position && camera && controls) {
+        const targetPos = new THREE.Vector3(...data.position).normalize().multiplyScalar(4.0);
+        camera.position.copy(targetPos);
+        controls.update();
+    }
+});
+
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
@@ -461,38 +508,40 @@ function onMouseDown(event) {
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     
     raycaster.setFromCamera(mouse, camera);
-    const allMeshes = [];
-    Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
-    const intersects = raycaster.intersectObjects(allMeshes, true);
+    // Raycast recursively against all fortress groups
+    const intersects = raycaster.intersectObjects(interactables, true);
 
     if (intersects.length > 0) {
         let target = intersects[0].object;
-        while (target.parent && !target.userData.id) target = target.parent;
-        const targetId = target.userData.id;
-        
-        const fort = gameState.fortresses[targetId];
-        
-        // Start Dragging if we own it
-        if (fort && fort.owner === playerUsername && !fort.disabled) {
-            isDragging = true;
-            dragSourceId = targetId;
-            controls.enabled = false; // LOCK CAMERA
+        // Bubble up to group with ID
+        while (target && !target.userData.id && target.parent) target = target.parent;
+
+        if (target && target.userData.id) {
+            const targetId = target.userData.id;
+            console.log("CLICK: Fortress", targetId);
+            const fort = gameState.fortresses[targetId];
             
-            handleNodeSelection(targetId);
-            
-            // Show Drag Arrow
-            const raceInfo = gameState.races[fort.race];
-            const c = raceInfo ? raceInfo.color : 0x00ff00;
-            
-            dragArrowGroup.children.forEach(cMesh => {
-                cMesh.material.color.setHex(c); // User Color
-            });
-            
-            // Initial Position
-            const startPos = fortressMeshes[targetId].mesh.position;
-            dragArrowGroup.position.copy(startPos);
-            dragArrowGroup.lookAt(startPos.clone().multiplyScalar(1.1)); // Just point out initially
-            dragArrowGroup.visible = true;
+            // Start Dragging if we own it
+            if (fort && fort.owner === playerUsername && !fort.disabled) {
+                isDragging = true;
+                dragSourceId = targetId;
+                controls.enabled = false; // LOCK CAMERA
+                
+                handleNodeSelection(targetId);
+                
+                // Show Drag Arrow
+                const raceInfo = gameState.races[fort.race];
+                const c = raceInfo ? raceInfo.color : 0x00ff00;
+                
+                dragArrowGroup.children.forEach(cMesh => {
+                    cMesh.material.color.setHex(c); 
+                });
+                
+                const startPos = fortressMeshes[targetId].mesh.position;
+                dragArrowGroup.position.copy(startPos);
+                dragArrowGroup.lookAt(startPos.clone().multiplyScalar(1.1)); 
+                dragArrowGroup.visible = true;
+            }
         }
     }
 }
@@ -505,86 +554,68 @@ function onMouseMove(event) {
     if (isDragging && dragSourceId) {
         raycaster.setFromCamera(mouse, camera);
         
-        // 1. Raycast against Globe to get mouse surface position
         const intersectsGlobe = raycaster.intersectObject(globeMesh);
-        
-        // 2. Raycast against Towers to see if we hover a valid target
-        const allMeshes = [];
-        Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
-        const intersectsForts = raycaster.intersectObjects(allMeshes, true);
+        const intersectsForts = raycaster.intersectObjects(interactables, true);
         
         let endPoint = null;
         let validSnap = false;
 
         if (intersectsForts.length > 0) {
             let target = intersectsForts[0].object;
-            while (target.parent && !target.userData.id) target = target.parent;
-            const targetId = target.userData.id;
+            while (target && !target.userData.id && target.parent) target = target.parent;
             
-            const neighbors = gameState.adj[dragSourceId] || [];
-            
-            // If hovering a neighbor (not self)
-            if (neighbors.includes(parseInt(targetId)) && targetId !== dragSourceId) {
-                // SNAP TO TARGET
-                endPoint = fortressMeshes[targetId].mesh.position.clone();
-                validSnap = true;
+            if (target && target.userData.id) {
+                const targetId = target.userData.id;
+                const neighbors = gameState.adj[dragSourceId] || [];
+                
+                if (neighbors.includes(parseInt(targetId)) && targetId !== dragSourceId) {
+                    endPoint = fortressMeshes[targetId].mesh.position.clone();
+                    validSnap = true;
+                }
             }
         }
 
-        // If no snap target, use globe surface
         if (!endPoint && intersectsGlobe.length > 0) {
-            endPoint = intersectsGlobe[0].point.clone().multiplyScalar(1.05); // Float slightly above surface
+            endPoint = intersectsGlobe[0].point.clone().multiplyScalar(1.05); 
         }
 
         if (endPoint) {
             const startPoint = fortressMeshes[dragSourceId].mesh.position;
             const dist = startPoint.distanceTo(endPoint);
             
-            // Position Arrow Group at Start Point
             dragArrowGroup.position.copy(startPoint);
-            
-            // Look At End Point
             dragArrowGroup.lookAt(endPoint);
             
-            // Shaft Scaling: The shaft is defined from Z=0 to Z=1.
-            // We want it to stretch from Start to (End - HeadLength).
-            const headLength = 0.15;
+            const headLength = 0.2;
             const shaftLen = Math.max(0.01, dist - headLength);
             
             const shaft = dragArrowGroup.getObjectByName('shaft');
-            if (shaft) {
-                shaft.scale.set(1, 1, shaftLen); // Scale Z to length
-            }
+            if (shaft) shaft.scale.set(1, 1, shaftLen);
             
             const head = dragArrowGroup.getObjectByName('head');
-            if (head) {
-                // Move head to end of shaft
-                head.position.set(0, 0, shaftLen);
-            }
+            if (head) head.position.set(0, 0, shaftLen);
 
-            // Visual Feedback for Validity
-            const color = validSnap ? 0x00ff00 : (COLORS.highlight); // Green if valid, Yellow if dragging
+            const color = validSnap ? 0x00ff00 : COLORS.highlight; 
             dragArrowGroup.children.forEach(m => m.material.color.setHex(color));
         }
     } else {
         // Standard Hover Logic
         if (gameState) {
             raycaster.setFromCamera(mouse, camera);
-            const allMeshes = [];
-            Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
-            const intersects = raycaster.intersectObjects(allMeshes, true);
+            const intersects = raycaster.intersectObjects(interactables, true);
             
             if (intersects.length > 0) {
                 let target = intersects[0].object;
-                while (target.parent && !target.userData.id) target = target.parent;
-                const targetId = target.userData.id;
-                if (targetId) {
-                    updateHUD(targetId);
+                while (target && !target.userData.id && target.parent) target = target.parent;
+                
+                if (target && target.userData.id) {
+                    console.log("HOVER: Fortress", target.userData.id);
+                    updateHUD(target.userData.id);
                     document.body.style.cursor = 'pointer';
+                    return;
                 }
-            } else {
-                document.body.style.cursor = 'default';
             }
+            document.body.style.cursor = 'default';
         }
     }
 }
@@ -592,30 +623,29 @@ function onMouseMove(event) {
 function onMouseUp(event) {
     if (isDragging) {
         raycaster.setFromCamera(mouse, camera);
-        const allMeshes = [];
-        Object.values(fortressMeshes).forEach(o => allMeshes.push(o.mesh));
-        const intersects = raycaster.intersectObjects(allMeshes, true);
+        const intersects = raycaster.intersectObjects(interactables, true);
         
         if (intersects.length > 0) {
             let target = intersects[0].object;
-            while (target.parent && !target.userData.id) target = target.parent;
-            const targetId = target.userData.id;
+            while (target && !target.userData.id && target.parent) target = target.parent;
             
-            const neighbors = gameState.adj[dragSourceId] || [];
-            
-            if (targetId !== dragSourceId && neighbors.includes(parseInt(targetId))) {
-                // Valid Drop -> Send Move
-                selectedTargetId = targetId;
-                socket.emit('submit_move', {
-                    source: dragSourceId,
-                    target: targetId
-                });
-                if(statusMsg) statusMsg.textContent = "Orders Sent.";
-                handleNodeSelection(targetId);
+            if (target && target.userData.id) {
+                const targetId = target.userData.id;
+                const neighbors = gameState.adj[dragSourceId] || [];
+                
+                if (targetId !== dragSourceId && neighbors.includes(parseInt(targetId))) {
+                    console.log("DRAG END: Sending Move", dragSourceId, "->", targetId);
+                    selectedTargetId = targetId;
+                    socket.emit('submit_move', {
+                        source: dragSourceId,
+                        target: targetId
+                    });
+                    if(statusMsg) statusMsg.textContent = "Orders Sent.";
+                    handleNodeSelection(targetId);
+                }
             }
         }
         
-        // Reset
         isDragging = false;
         dragSourceId = null;
         dragArrowGroup.visible = false;
@@ -624,7 +654,6 @@ function onMouseUp(event) {
     }
 }
 
-// ... Rest of the file (HandleNodeSelection, updateHUD, animate) remains effectively same ...
 function handleNodeSelection(id) {
     const fortress = gameState.fortresses[id];
     
@@ -733,6 +762,13 @@ function startAnimation() {
     const clock = new THREE.Clock();
     function animate() {
         requestAnimationFrame(animate);
+        const dt = clock.getDelta();
+        
+        // Rotate Sector Icons
+        for(let key in sectorIcons) {
+            sectorIcons[key].rotation.y += 1.0 * dt;
+        }
+
         controls.update();
         renderer.render(scene, camera);
     }

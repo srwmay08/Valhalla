@@ -298,22 +298,11 @@ def generate_game_world():
     game_state["roads"] = list(valid_roads)
     game_state["fortresses"] = {}
     
-    # --- Identify Water-Locked Vertices ---
-    vertex_faces = {i: [] for i in range(len(vertices))}
-    for f_idx, face in enumerate(faces):
-        for v_idx in face:
-            vertex_faces[v_idx].append(f_idx)
-            
     # --- Generate Fortresses with Fixed Types ---
     types_keys = list(FORTRESS_TYPES.keys())
     types_probs = [FORTRESS_TYPES[k]["prob"] for k in types_keys]
     
     for i in range(len(vertices)):
-        # Determine if this vertex is in water (all adjacent faces are sea/deep sea)
-        adjacent_terrain = [face_terrain[f] for f in vertex_faces[i]]
-        is_water_locked = all(t in ["Deep Sea", "Sea"] for t in adjacent_terrain)
-
-        # Randomly assign a type based on probabilities
         ftype = random.choices(types_keys, types_probs)[0]
         
         game_state["fortresses"][str(i)] = {
@@ -325,8 +314,7 @@ def generate_game_world():
             "special_active": False,
             "tier": 1, 
             "paths": [],
-            "type": ftype, # Permanent type
-            "disabled": is_water_locked # Flag for rendering
+            "type": ftype
         }
     game_state["initialized"] = True
 
@@ -334,21 +322,18 @@ def generate_game_world():
 def process_ai_turn():
     """AI Logic scaled by Difficulty."""
     ai_profile = AI_PROFILES.get(AI_DIFFICULTY, AI_PROFILES["Normal"])
-    
-    # Simulate reaction delay
-    if random.randint(0, 10) < ai_profile["reaction_delay"]:
-        return
+    if random.randint(0, 10) < ai_profile["reaction_delay"]: return
 
     ai_forts = [f for f in game_state["fortresses"].values() if f['owner'] == AI_NAME]
     
     for fort in ai_forts:
-        # Upgrade Logic
+        # Upgrade
         cost_next = UPGRADE_COST_TIER_2 if fort['tier'] == 1 else UPGRADE_COST_TIER_3 if fort['tier'] == 2 else 9999
         if fort['units'] > cost_next * 1.5 and fort['tier'] < 3:
              fort['units'] -= cost_next
              fort['tier'] += 1
         
-        # Expansion Logic
+        # Expand
         max_paths = fort['tier']
         if len(fort['paths']) < max_paths and fort['units'] > 15:
              neighbors = game_state["adj"].get(int(fort['id']), [])
@@ -358,27 +343,21 @@ def process_ai_turn():
              for n_id in neighbors:
                  if str(n_id) in fort['paths']: continue
                  target = game_state["fortresses"].get(str(n_id))
+                 if not target: continue
                  
-                 if not target or target.get('disabled'): continue
-                 
-                 # AI Evaluation Score
                  score = 0
                  score -= target['units']
-                 if target['owner'] != AI_NAME:
-                     score += 50 * ai_profile["expand_bias"]
-                 else:
-                     score -= 20 
-                 
+                 if target['owner'] != AI_NAME: score += 50 * ai_profile["expand_bias"]
+                 else: score -= 20
                  if target['type'] == 'Farm': score += 20
                  
                  if score > score_best:
                      score_best = score
                      best_target = str(n_id)
             
-             if best_target:
-                 fort['paths'].append(best_target)
+             if best_target: fort['paths'].append(best_target)
 
-# --- Background Task (The Game Loop) ---
+# --- Background Task ---
 def background_thread():
     while True:
         socketio.sleep(TICK_RATE)
@@ -386,7 +365,7 @@ def background_thread():
             
         changes_made = False
         
-        # 0. Check Sector Dominance (High Ground)
+        # Sector Dominance
         face_ownership = {}
         for idx, face in enumerate(game_state["faces"]):
             v1, v2, v3 = [str(x) for x in face]
@@ -401,22 +380,36 @@ def background_thread():
         
         if face_ownership != game_state.get("sector_owners", {}):
             game_state["sector_owners"] = face_ownership
-        
+            
+            for f_idx, owner in face_ownership.items():
+                idx = int(f_idx)
+                if owner:
+                    v_ex = game_state["faces"][idx][0]
+                    race_name = game_state["fortresses"][str(v_ex)]['race']
+                    if race_name in RACES:
+                        base_c = RACES[race_name]['color']
+                        game_state["face_colors"][idx] = darken_color(base_c, 0.3)
+                else:
+                    t_type = game_state["face_terrain"][idx]
+                    game_state["face_colors"][idx] = TERRAIN_COLORS.get(t_type, 0xff00ff)
+            
+            changes_made = True
+            socketio.emit('update_face_colors', game_state["face_colors"])
+
         # Run AI
         process_ai_turn()
         
+        # Game Loop
         for fid, fort in game_state["fortresses"].items():
-            if fort.get('disabled'): continue
-
             f_type_stats = FORTRESS_TYPES[fort['type']]
             
-            # 1. Passive Growth
+            # 1. Growth
             has_dominance_bonus = False
-            vertex_faces = [i for i, f in enumerate(game_state["faces"]) if int(fid) in f]
-            for face_idx in vertex_faces:
-                if game_state["sector_owners"].get(str(face_idx)) == fort['owner']:
-                    has_dominance_bonus = True
-                    break
+            for f_idx, face in enumerate(game_state["faces"]):
+                if int(fid) in face:
+                    if game_state["sector_owners"].get(str(f_idx)) == fort['owner']:
+                        has_dominance_bonus = True
+                        break
             
             cap = f_type_stats['cap']
             if fort['owner'] and fort['units'] < cap:
@@ -426,21 +419,19 @@ def background_thread():
                 fort['units'] = min(cap, fort['units'] + growth)
                 changes_made = True
             
-            # 2. Process Outgoing Paths
+            # 2. Outgoing
             if fort['paths']:
                 for target_id in fort['paths']:
                     target = game_state["fortresses"].get(target_id)
-                    if not target or target.get('disabled'): continue
+                    if not target: continue
                     
                     amount = FLOW_RATE
                     
                     if target['owner'] == fort['owner']:
-                        # Reinforce
                         t_type = FORTRESS_TYPES[target['type']]
                         if target['units'] < t_type['cap'] * 2:
                             target['units'] += amount
                     else:
-                        # Attack
                         def_type = FORTRESS_TYPES[target['type']]
                         def_race = RACES.get(target['race'], RACES["Neutral"])
                         def_mult = def_race.get('base_def', 1.0) * def_type['def_mod']
@@ -458,20 +449,18 @@ def background_thread():
                         defense_val = target['units'] * def_mult
                         
                         if damage > defense_val:
-                            # Conquered
                             target['owner'] = fort['owner']
                             target['race'] = fort['race']
                             target['units'] = 1.0
                             target['paths'] = []
                             target['tier'] = 1 
                         else:
-                            # Defended
                             new_def_power = defense_val - damage
                             target['units'] = max(0, new_def_power / def_mult)
                     
                     changes_made = True
             
-            # 3. Handle Auto-Upgrade
+            # 3. Upgrade
             current_tier = fort['tier']
             if current_tier < 3:
                 cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
@@ -480,14 +469,13 @@ def background_thread():
                     fort['tier'] += 1
                     changes_made = True
 
-            # Prune paths
             if len(fort['paths']) > fort['tier']:
                 fort['paths'] = fort['paths'][:fort['tier']]
 
         if changes_made:
             socketio.emit('update_map', game_state["fortresses"])
 
-# --- Application Factory ---
+# --- App Factory ---
 def create_app():
     app = Flask(__name__)
     app.config.from_object('config')
@@ -556,77 +544,80 @@ def create_app():
         with thread_lock:
             if thread is None: thread = socketio.start_background_task(background_thread)
         if current_user.is_authenticated:
-            assign_home_sector(current_user)
-            emit('update_map', game_state["fortresses"])
+            # Send initial state
             emit('update_face_colors', game_state["face_colors"])
+            emit('update_map', game_state["fortresses"])
+            assign_home_sector(current_user)
 
     @socketio.on('restart_game')
     @login_required
     def handle_restart():
         generate_game_world()
         game_state["sector_owners"] = {}
-        # Re-assign home for current user
         assign_home_sector(current_user)
         emit('update_map', game_state["fortresses"], broadcast=True)
         emit('update_face_colors', game_state["face_colors"], broadcast=True)
 
     def assign_home_sector(user):
         """Assigns a full triangular sector (3 vertices) to the player."""
-        # 0. Check if user already owns something
-        for f in game_state["fortresses"].values():
-            if f['owner'] == user.username: return # Already spawned
-        
-        # 1. Spawn AI if not present
         spawn_ai_sector()
         
+        # 1. Check if user already owns something
+        existing_forts = [f for f in game_state["fortresses"].values() if f['owner'] == user.username]
+        if existing_forts:
+            # Focus camera on first owned fort
+            f = existing_forts[0]
+            vid = int(f['id'])
+            v_pos = game_state["vertices"][vid]
+            emit('focus_camera', {'position': v_pos})
+            return 
+        
         # 2. Spawn Player
-        # Helper to try finding spots
-        def try_spawn(allowed_terrains=None):
-            available_faces = list(enumerate(game_state["faces"]))
-            random.shuffle(available_faces)
+        available_faces = list(enumerate(game_state["faces"]))
+        random.shuffle(available_faces)
 
+        def try_spawn(allowed_terrains=None):
             for i, face in available_faces:
                 terrain = game_state.get("face_terrain", [])[i]
-                
-                # Filter terrain if constraints provided
                 if allowed_terrains and terrain not in allowed_terrains: continue
-                # Skip invalid zones (Deep Sea/Sea always bad for home base)
                 if terrain in ["Deep Sea", "Sea"]: continue
                 
                 v1, v2, v3 = [str(x) for x in face]
-                f1 = game_state["fortresses"].get(v1)
-                f2 = game_state["fortresses"].get(v2)
-                f3 = game_state["fortresses"].get(v3)
+                f1, f2, f3 = game_state["fortresses"].get(v1), game_state["fortresses"].get(v2), game_state["fortresses"].get(v3)
                 
                 if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
                 if f1['owner'] or f2['owner'] or f3['owner']: continue
 
-                # SUCCESS: Found a spot
+                # SUCCESS
                 race_color = RACES["Human"]["color"]
                 game_state["face_colors"][i] = darken_color(race_color, factor=0.4)
                 
                 units_per_base = STARTING_UNITS_POOL // 3
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
-                        "owner": user.username, 
-                        "units": units_per_base, 
-                        "race": "Human",
-                        "is_capital": True, 
-                        "special_active": True, 
-                        "tier": 1, 
-                        "paths": []
+                        "owner": user.username, "units": units_per_base, "race": "Human",
+                        "is_capital": True, "special_active": True, "tier": 1, "paths": []
                     })
                 game_state["sector_owners"][str(i)] = user.username
+                
+                # Calculate Face Center for Camera Focus
+                coords1 = game_state["vertices"][int(v1)]
+                coords2 = game_state["vertices"][int(v2)]
+                coords3 = game_state["vertices"][int(v3)]
+                
+                center_x = (coords1[0] + coords2[0] + coords3[0]) / 3
+                center_y = (coords1[1] + coords2[1] + coords3[1]) / 3
+                center_z = (coords1[2] + coords2[2] + coords3[2]) / 3
+                
+                emit('focus_camera', {'position': [center_x, center_y, center_z]})
                 return True
             return False
 
-        # Try Tier 1: Good lands only
         if not try_spawn(allowed_terrains=["Plain", "Hill", "Forest", "Farm"]):
-            # Try Tier 2: Anything not Water
             try_spawn(allowed_terrains=None)
             
         emit('update_face_colors', game_state["face_colors"], broadcast=True)
-        emit('update_map', game_state["fortresses"], broadcast=True) # Force map update immediately
+        emit('update_map', game_state["fortresses"], broadcast=True)
 
     def spawn_ai_sector():
         for f in game_state["fortresses"].values():
@@ -640,7 +631,7 @@ def create_app():
             if terrain in ["Deep Sea", "Sea", "Mountain"]: continue
             
             v1, v2, v3 = [str(x) for x in face]
-            f1, f2, f3 = game_state["fortresses"].get(v1), game_state["fortresses"].get(v2), game_state["fortresses"].get(v3)
+            f1, f2, f3 = game_state["fortresses"][v1], game_state["fortresses"][v2], game_state["fortresses"][v3]
             
             if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
             
@@ -660,6 +651,7 @@ def create_app():
     @socketio.on('submit_move')
     @login_required
     def handle_move(data):
+        print(f"SERVER: Received Move Request from {current_user.username}: {data}")
         src_id = str(data.get('source')); tgt_id = str(data.get('target'))
         if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]: return
         src_fort = game_state["fortresses"][src_id]
