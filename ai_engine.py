@@ -1,82 +1,104 @@
 import random
 from config import (
-    TIER_2_THRESHOLD, TIER_3_THRESHOLD,
-    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3,
-    FORTRESS_TYPES
+    AI_DIFFICULTY, AI_PROFILES, 
+    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3, 
+    FORTRESS_TYPES, TERRAIN_BUILD_OPTIONS
 )
-
-AI_NAME = "Gorgon"
 
 def process_ai_turn(game_state):
     """
-    Decisions for the AI (Gorgon).
-    1. Upgrade fortresses if flush with units.
-    2. Expand to weak neighbors.
-    3. Reinforce threatened nodes.
+    Executes the AI's logic for the current turn.
+    1. Specialization: Converts basic Keeps into specialized structures.
+    2. Upgrades: Spends resources to upgrade fortress tiers.
+    3. Expansion/Attack: Sends units to conquer neighbors.
     """
     
-    # Identify AI Fortresses
-    ai_forts = [
-        f for f in game_state["fortresses"].values() 
-        if f['owner'] == AI_NAME
-    ]
+    # 1. Get AI Settings
+    profile = AI_PROFILES.get(AI_DIFFICULTY, AI_PROFILES["Normal"])
+    reaction_delay = profile["reaction_delay"]
+    expand_bias = profile["expand_bias"]
     
-    if not ai_forts:
-        return
-
+    # Iterate through all fortresses to find AI-owned ones
+    ai_forts = [f for f in game_state["fortresses"].values() if f['owner'] == "Gorgon"]
+    
     for fort in ai_forts:
-        fid = str(fort['id'])
-        
-        # --- 1. Upgrade Logic ---
-        # (Note: fortress_engine handles the actual upgrade math, 
-        # but AI must 'request' it or we simulate resource management here)
-        # Since fortress_engine.py in the previous step handled auto-upgrades for EVERYONE based on config,
-        # we can skip manual upgrade logic here to avoid double dipping, 
-        # OR we can manage paths/aggression here.
-        
-        # --- 2. Path Management (Attack/Reinforce) ---
-        # Get neighbors from adjacency list
-        neighbors = game_state["adj"].get(int(fid), [])
-        
-        # Decide where to send paths
-        current_paths = fort['paths']
-        possible_targets = []
-        
-        for n_idx in neighbors:
-            n_id = str(n_idx)
-            neighbor = game_state["fortresses"].get(n_id)
-            if not neighbor: continue
+        # Skip if disabled (stunned/cooldown)
+        if fort.get('disabled', False):
+            continue
+
+        # --- A. SPECIALIZATION LOGIC ---
+        # If we own a "Keep" (basic type), try to specialize it.
+        if fort['type'] == "Keep" and fort['units'] > 10:
+            # 1. Determine valid options for this terrain
+            terrain = fort.get('land_type', 'Plain')
+            allowed_types = TERRAIN_BUILD_OPTIONS.get(terrain, TERRAIN_BUILD_OPTIONS["Default"])
             
-            # Score this neighbor
-            score = 0
+            # 2. Filter out "Keep" so we pick something interesting
+            special_options = [t for t in allowed_types if t != "Keep"]
             
-            if neighbor['owner'] != AI_NAME:
-                # Attack Logic
-                # Prefer weak targets
-                if neighbor['units'] < fort['units'] * 0.8:
-                    score += 50
-                # Prefer capturing empty/neutral
-                if neighbor['owner'] is None:
-                    score += 20
-            else:
-                # Reinforce Logic
-                # If neighbor is critical or under attack (conceptually)
-                if neighbor['units'] < 20:
-                    score += 10
+            if special_options:
+                # 3. Choose based on strategy (Random for now, but could be smarter)
+                new_type = random.choice(special_options)
+                fort['type'] = new_type
+                # Small cost to build? For now, free, just consumes the turn action effectively
+                continue # Skip other actions this turn
+
+        # --- B. UPGRADE LOGIC ---
+        # AI attempts to upgrade if it has significant excess units
+        current_tier = fort['tier']
+        if current_tier < 3:
+            cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
+            # buffer: Don't spend all units, leave some for defense
+            buffer = 20 
             
-            possible_targets.append((n_id, score))
-        
-        # Sort by score
-        possible_targets.sort(key=lambda x: x[1], reverse=True)
-        
-        # Update paths based on Tier Limit
-        # AI creates paths to the highest scoring neighbors
-        max_paths = fort['tier'] # e.g. Tier 1 = 1 path
-        
-        new_paths = []
-        for target_id, score in possible_targets:
-            if len(new_paths) < max_paths and score > 0:
-                new_paths.append(target_id)
-        
-        # Apply changes
-        fort['paths'] = new_paths
+            if fort['units'] > cost + buffer:
+                # 10% chance to upgrade per tick if affordable (prevents instant mass upgrades)
+                if random.random() < 0.10:
+                    fort['units'] -= cost
+                    fort['tier'] += 1
+                    continue # Action taken
+
+        # --- C. ATTACK / EXPANSION LOGIC ---
+        # Only attack if we have enough units to be effective
+        if fort['units'] > 15:
+            # Get neighbors from adjacency list
+            neighbors = game_state["adj"].get(int(fort['id']), [])
+            
+            # Identify targets
+            weakest_target = None
+            lowest_defense = 9999
+            
+            for n_id in neighbors:
+                target = game_state["fortresses"].get(str(n_id))
+                if not target: continue
+                
+                # Calculate effective defense
+                # (Simple AI view: just look at unit count)
+                def_val = target['units']
+                
+                # Bias: Prefer attacking non-AI (Player) or Neutral
+                if target['owner'] == "Gorgon":
+                    # Reinforce own nodes if they are weak
+                    if target['units'] < 10:
+                        def_val = -50 # High priority to reinforce
+                    else:
+                        continue # Don't attack self usually
+                
+                if def_val < lowest_defense:
+                    lowest_defense = def_val
+                    weakest_target = target
+
+            # Decide to attack
+            if weakest_target:
+                # Threshold to attack: Do I have more than them?
+                # Multiplier lowers the threshold based on 'expand_bias' (higher bias = more aggressive)
+                aggression_threshold = lowest_defense * (1.5 - expand_bias)
+                
+                if fort['units'] > aggression_threshold:
+                    target_id = str(weakest_target['id'])
+                    
+                    # Add path if not already attacking
+                    if target_id not in fort['paths']:
+                        # Check path limit (Tier limit)
+                        if len(fort['paths']) < fort['tier']:
+                            fort['paths'].append(target_id)
