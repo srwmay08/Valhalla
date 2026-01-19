@@ -1,139 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Valhalla: Vertex Wars</title>
     <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background-color: #050510;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        canvas { display: block; touch-action: none; }
-        
-        #app-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
-
-        /* Navbar */
-        .navbar { 
-            position: absolute;
-            top: 0; left: 0; width: 100%; 
-            background: linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0)); 
-            padding: 15px; text-align: right; box-sizing: border-box; 
-            pointer-events: none; z-index: 10;
-        }
-        .navbar a, .navbar span, .navbar button { 
-            pointer-events: auto; color: white; margin-left: 15px;
-            text-decoration: none; font-weight: bold; text-shadow: 0 0 5px #000;
-        }
-        .navbar button {
-            background: #d9534f; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;
-        }
-        .navbar button:hover { background: #c9302c; }
-
-        /* HUD */
-        #game-ui {
-            position: absolute;
-            bottom: 20px; right: 20px; width: 320px;
-            background: rgba(15, 15, 25, 0.95);
-            border: 2px solid #556;
-            border-radius: 12px;
-            padding: 20px;
-            color: #eee;
-            box-shadow: 0 0 25px rgba(0,0,0,0.9);
-            display: none; 
-            pointer-events: auto;
-            z-index: 10;
-        }
-        
-        #game-ui h3 { margin-top: 0; border-bottom: 1px solid #778; padding-bottom: 10px; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
-        
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; }
-        .stat-label { color: #aaa; font-weight: bold; }
-        .stat-val { font-family: monospace; font-size: 1.1em; }
-        
-        #slider-container { margin-top: 20px; text-align: center; }
-        input[type=range] { width: 100%; accent-color: #007bff; cursor: pointer; }
-        
-        button#btn-action {
-            width: 100%; padding: 12px; margin-top: 15px;
-            background: #007bff; border: none; border-radius: 6px;
-            color: white; font-weight: bold; font-size: 1.1em; cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
-        }
-        button#btn-action:hover { background: #0056b3; transform: scale(1.02); }
-        button#btn-action:disabled { background: #444; cursor: not-allowed; transform: none; }
-        
-        #status-msg {
-            position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
-            color: #ffcc00; font-size: 20px; font-weight: bold;
-            text-shadow: 0 2px 4px #000; pointer-events: none;
-            background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px;
-        }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+        .hud-panel { pointer-events: auto; background: rgba(0,0,0,0.7); color: white; padding: 10px; margin: 10px; border-radius: 5px; }
+        #fortress-info { position: absolute; bottom: 20px; right: 20px; display: none; }
     </style>
 </head>
 <body>
-    <div id="app-container">
-        <div class="navbar">
-            {% if current_user.is_authenticated %}
-                <span>Commander {{ user.username }}</span>
-                <button id="btn-restart">Restart Game</button>
-                <a href="{{ url_for('logout') }}">Retreat</a>
-            {% else %}
-                <a href="{{ url_for('login') }}">Login</a>
-            {% endif %}
+    <div id="game-container"></div>
+    
+    <div id="ui-layer">
+        <div style="position: absolute; top: 10px; left: 10px;" class="hud-panel">
+            <h3>I Have The High Ground</h3>
+            <button id="restart-btn">Restart Game</button>
         </div>
         
-        <span id="username" style="display: none;">{{ user.username }}</span>
-        <div id="status-msg"></div>
-        <div id="canvas-container"></div>
-
-        <div id="game-ui">
-            <h3 id="ui-title">Fortress</h3>
-            
-            <div class="stat-row">
-                <span class="stat-label">Land Type:</span>
-                <span id="ui-land" class="stat-val">Unknown</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Structure:</span>
-                <span id="ui-type" class="stat-val">Keep</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Owner:</span>
-                <span id="ui-owner" class="stat-val">Neutral</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Garrison:</span>
-                <span id="ui-units" class="stat-val">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Tier:</span>
-                <span id="ui-tier" class="stat-val">1</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Special:</span>
-                <span id="ui-special" class="stat-val">Inactive</span>
-            </div>
-            
-            <div id="action-area" style="display:none;">
-                <div id="slider-container">
-                    <label>Send Units</label>
-                    <input type="range" id="unit-slider" min="1" max="100" value="50">
-                </div>
-                <button id="btn-action">SELECT TARGET</button>
-            </div>
+        <div id="fortress-info" class="hud-panel">
+            <h4>Fortress Intel</h4>
+            <div id="info-content"></div>
         </div>
     </div>
 
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <div id="username-store" style="display:none">{{ user.username }}</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    
     <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

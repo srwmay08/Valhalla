@@ -4,11 +4,13 @@ export class GameClient {
         this.socket = io();
         this.callbacks = callbacks;
         
-        this.username = document.getElementById('username-store').innerText; // Hidden HTML element
+        this.username = document.getElementById('username').innerText; // Matches HTML
         this.gameState = {
             fortresses: {},
             vertices: [],
-            faces: []
+            faces: [],
+            terrain_build_options: {}, // Will be populated from API
+            fortress_types: {}
         };
 
         this.initSocket();
@@ -42,6 +44,16 @@ export class GameClient {
 
     getFortress(id) {
         return this.gameState.fortresses[id];
+    }
+    
+    getValidStructures(terrainType) {
+        const options = this.gameState.terrain_build_options;
+        if (!options) return ["Keep"];
+        return options[terrainType] || options["Default"] || ["Keep"];
+    }
+
+    specializeFortress(id, typeName) {
+        this.socket.emit('specialize_fortress', { id: id, type: typeName });
     }
 
     sendMove(sourceId, targetId) {

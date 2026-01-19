@@ -16,7 +16,8 @@ import combat_engine
 from ai_engine import process_ai_turn
 
 from config import (
-    RACES, MAX_PLAYERS, STARTING_UNITS_POOL, TICK_RATE
+    RACES, MAX_PLAYERS, STARTING_UNITS_POOL, TICK_RATE, 
+    TERRAIN_BUILD_OPTIONS, FORTRESS_TYPES
 )
 
 # --- Configuration Overrides ---
@@ -171,16 +172,18 @@ def create_app():
         if not game_state["initialized"]: 
             world_data = world_engine.generate_game_world()
             game_state.update(world_data)
-            game_state["fortresses"] = fortress_engine.initialize_fortresses(len(game_state["vertices"]))
+            # Pass game_state to initialize_fortresses for terrain checking
+            game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
             game_state["initialized"] = True
             
         # Need to include constants for frontend
-        from config import FORTRESS_TYPES, RACES
+        from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
         return jsonify({
             "vertices": game_state["vertices"], "faces": game_state["faces"],
             "face_colors": game_state["face_colors"], "roads": game_state["roads"],
             "fortresses": game_state["fortresses"], "adj": game_state["adj"], "races": RACES,
-            "fortress_types": FORTRESS_TYPES
+            "fortress_types": FORTRESS_TYPES,
+            "terrain_build_options": TERRAIN_BUILD_OPTIONS
         })
 
     @socketio.on('connect')
@@ -199,7 +202,8 @@ def create_app():
         # Regenerate World
         world_data = world_engine.generate_game_world()
         game_state.update(world_data)
-        game_state["fortresses"] = fortress_engine.initialize_fortresses(len(game_state["vertices"]))
+        # Pass game_state
+        game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
         game_state["sector_owners"] = {}
         
         assign_home_sector(current_user)
@@ -238,9 +242,11 @@ def create_app():
                 
                 units_per_base = STARTING_UNITS_POOL // 3
                 for vid in [v1, v2, v3]:
+                    # Default to Keep for capital
                     game_state["fortresses"][vid].update({
                         "owner": user.username, "units": units_per_base, "race": "Human",
-                        "is_capital": True, "special_active": True, "tier": 1, "paths": []
+                        "is_capital": True, "special_active": True, "tier": 1, "paths": [],
+                        "type": "Keep" 
                     })
                 game_state["sector_owners"][str(i)] = user.username
                 
@@ -287,7 +293,8 @@ def create_app():
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
                         "owner": AI_NAME, "units": units_per_base, "race": "Orc",
-                        "is_capital": True, "special_active": True, "tier": 1, "paths": []
+                        "is_capital": True, "special_active": True, "tier": 1, "paths": [],
+                        "type": "Keep"
                     })
                 game_state["sector_owners"][str(i)] = AI_NAME
                 return
@@ -309,6 +316,26 @@ def create_app():
             if len(src_fort['paths']) < src_fort['tier']: src_fort['paths'].append(tgt_id)
         
         emit('update_map', game_state["fortresses"], broadcast=True)
+
+    @socketio.on('specialize_fortress')
+    @login_required
+    def handle_specialize(data):
+        """Allows players to change the fortress type if terrain permits."""
+        fid = str(data.get('id'))
+        new_type = data.get('type')
+        
+        if fid not in game_state["fortresses"]: return
+        fort = game_state["fortresses"][fid]
+        
+        if fort['owner'] != current_user.username: return
+        
+        # Check terrain validity
+        land_type = fort.get('land_type', 'Plain')
+        allowed = TERRAIN_BUILD_OPTIONS.get(land_type, TERRAIN_BUILD_OPTIONS['Default'])
+        
+        if new_type in allowed and new_type in FORTRESS_TYPES:
+            fort['type'] = new_type
+            emit('update_map', game_state["fortresses"], broadcast=True)
 
     return app
 

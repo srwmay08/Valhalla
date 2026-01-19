@@ -57,11 +57,24 @@ UPGRADE_COST_TIER_3 = 120
 
 # --- Fortress Types (The "Specialization") ---
 FORTRESS_TYPES = {
-    "Keep":       {"prob": 0.4, "gen_mult": 1.0, "cap": 60,  "def_mod": 1.0, "atk_mod": 1.0, "desc": "Balanced"},
-    "Farm":       {"prob": 0.2, "gen_mult": 2.0, "cap": 40,  "def_mod": 0.7, "atk_mod": 0.8, "desc": "High Spawn"},
-    "Tower":      {"prob": 0.1, "gen_mult": 0.5, "cap": 40,  "def_mod": 1.5, "atk_mod": 1.5, "desc": "High DMG"},
-    "Laboratory": {"prob": 0.15, "gen_mult": 0.8, "cap": 50,  "def_mod": 1.2, "atk_mod": 1.1, "desc": "Support"},
-    "Blacksmith": {"prob": 0.15, "gen_mult": 0.8, "cap": 80,  "def_mod": 1.4, "atk_mod": 1.0, "desc": "Siege/Tank"}
+    "Keep":           {"prob": 0.3, "gen_mult": 1.0, "cap": 60,  "def_mod": 1.0, "atk_mod": 1.0, "desc": "Balanced"},
+    "Grain Farm":     {"prob": 0.15, "gen_mult": 2.0, "cap": 40, "def_mod": 0.7, "atk_mod": 0.8, "desc": "Conscript/Swarm"},
+    "Livestock Farm": {"prob": 0.15, "gen_mult": 1.5, "cap": 40, "def_mod": 0.8, "atk_mod": 1.2, "desc": "Horse/Fast"},
+    "Tower":          {"prob": 0.1, "gen_mult": 0.5, "cap": 40,  "def_mod": 1.5, "atk_mod": 1.5, "desc": "High DMG"},
+    "Laboratory":     {"prob": 0.15, "gen_mult": 0.8, "cap": 50,  "def_mod": 1.2, "atk_mod": 1.1, "desc": "Support"},
+    "Blacksmith":     {"prob": 0.15, "gen_mult": 0.8, "cap": 80,  "def_mod": 1.4, "atk_mod": 1.0, "desc": "Siege/Tank"}
+}
+
+# --- Terrain Construction Rules ---
+TERRAIN_BUILD_OPTIONS = {
+    "Waste":    ["Keep"],
+    "Mountain": ["Keep", "Tower", "Laboratory", "Blacksmith"],
+    "Swamp":    ["Keep", "Laboratory"],
+    "Lava":     ["Keep", "Blacksmith"],
+    "Deep Sea": ["Keep"], # Should not happen usually
+    "Sea":      ["Keep"],
+    # Default allows all
+    "Default":  ["Keep", "Grain Farm", "Livestock Farm", "Tower", "Laboratory", "Blacksmith"]
 }
 
 # --- AI Settings ---

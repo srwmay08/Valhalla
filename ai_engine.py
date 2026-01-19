@@ -1,60 +1,82 @@
 import random
-from config import RACES
-from config import TIER_2_THRESHOLD
-from config import AI_NAME
+from config import (
+    TIER_2_THRESHOLD, TIER_3_THRESHOLD,
+    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3,
+    FORTRESS_TYPES
+)
+
+AI_NAME = "Gorgon"
 
 def process_ai_turn(game_state):
     """
-    Executes the AI logic for the 'Gorgon' faction.
-    Analyzes the game state and modifies it in place.
+    Decisions for the AI (Gorgon).
+    1. Upgrade fortresses if flush with units.
+    2. Expand to weak neighbors.
+    3. Reinforce threatened nodes.
     """
-    # Filter fortresses owned by the AI
-    ai_forts = []
-    for fort in game_state["fortresses"].values():
-        if fort['owner'] == AI_NAME:
-            ai_forts.append(fort)
     
-    # Iterate through each AI fortress to determine actions
+    # Identify AI Fortresses
+    ai_forts = [
+        f for f in game_state["fortresses"].values() 
+        if f['owner'] == AI_NAME
+    ]
+    
+    if not ai_forts:
+        return
+
     for fort in ai_forts:
-        # 1. Growth Strategy
-        current_units = fort['units']
-        current_tier = fort['tier']
+        fid = str(fort['id'])
         
-        # Check if we need to prioritize growth
-        is_low_units = current_units < TIER_2_THRESHOLD
-        is_low_tier = current_tier < 2
+        # --- 1. Upgrade Logic ---
+        # (Note: fortress_engine handles the actual upgrade math, 
+        # but AI must 'request' it or we simulate resource management here)
+        # Since fortress_engine.py in the previous step handled auto-upgrades for EVERYONE based on config,
+        # we can skip manual upgrade logic here to avoid double dipping, 
+        # OR we can manage paths/aggression here.
         
-        if is_low_units and is_low_tier:
-            if fort['paths']:
-                # Cut all paths to grow
-                fort['paths'] = []
+        # --- 2. Path Management (Attack/Reinforce) ---
+        # Get neighbors from adjacency list
+        neighbors = game_state["adj"].get(int(fid), [])
         
-        # 2. Expansion Strategy
-        # If strong enough, find a target
-        elif current_units >= 25:
-            max_paths = fort['tier']
-            current_path_count = len(fort['paths'])
+        # Decide where to send paths
+        current_paths = fort['paths']
+        possible_targets = []
+        
+        for n_idx in neighbors:
+            n_id = str(n_idx)
+            neighbor = game_state["fortresses"].get(n_id)
+            if not neighbor: continue
             
-            if current_path_count < max_paths:
-                # Find valid neighbors
-                fort_id_int = int(fort['id'])
-                neighbors = game_state["adj"].get(fort_id_int, [])
-                best_target = None
-                lowest_def = 9999
-                
-                for n_id in neighbors:
-                    target_key = str(n_id)
-                    target = game_state["fortresses"][target_key]
-                    
-                    # Don't attack self
-                    if target['owner'] == AI_NAME:
-                        continue
-                        
-                    # Attack weakest neighbor
-                    if target['units'] < lowest_def:
-                        lowest_def = target['units']
-                        best_target = target_key
-                
-                if best_target:
-                    if best_target not in fort['paths']:
-                        fort['paths'].append(best_target)
+            # Score this neighbor
+            score = 0
+            
+            if neighbor['owner'] != AI_NAME:
+                # Attack Logic
+                # Prefer weak targets
+                if neighbor['units'] < fort['units'] * 0.8:
+                    score += 50
+                # Prefer capturing empty/neutral
+                if neighbor['owner'] is None:
+                    score += 20
+            else:
+                # Reinforce Logic
+                # If neighbor is critical or under attack (conceptually)
+                if neighbor['units'] < 20:
+                    score += 10
+            
+            possible_targets.append((n_id, score))
+        
+        # Sort by score
+        possible_targets.sort(key=lambda x: x[1], reverse=True)
+        
+        # Update paths based on Tier Limit
+        # AI creates paths to the highest scoring neighbors
+        max_paths = fort['tier'] # e.g. Tier 1 = 1 path
+        
+        new_paths = []
+        for target_id, score in possible_targets:
+            if len(new_paths) < max_paths and score > 0:
+                new_paths.append(target_id)
+        
+        # Apply changes
+        fort['paths'] = new_paths

@@ -37,8 +37,7 @@ def process_sector_dominance(game_state):
                     game_state["face_colors"][idx] = darken_color(base_c, 0.3)
             else:
                 # Reset to terrain color
-                # We need TERRAIN_COLORS map here, or rely on stored terrain type
-                from config import TERRAIN_COLORS # Local import to avoid circular issues if any
+                from config import TERRAIN_COLORS # Local import
                 t_type = game_state["face_terrain"][idx]
                 game_state["face_colors"][idx] = TERRAIN_COLORS.get(t_type, 0xff00ff)
         
@@ -99,6 +98,9 @@ def process_combat_flows(game_state):
                     target['units'] = 1.0
                     target['paths'] = [] # Reset paths on capture
                     target['tier'] = 1 
+                    
+                    # SPECIALIZATION RESET: Reset to basic type to allow new specialization
+                    target['type'] = 'Keep' 
                 else:
                     # Damage Logic
                     new_def_power = defense_val - damage

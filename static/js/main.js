@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ui = new UIManager();
 
     // 2. Setup Renderer
-    const renderer = new GameRenderer('game-container');
+    const renderer = new GameRenderer('canvas-container'); // Fixed ID from previous index.html
 
     // 3. Setup Game Client with callbacks to Renderer/UI
     const client = new GameClient({
@@ -20,10 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
         onMapUpdate: (fortresses) => {
             renderer.updateFortresses(fortresses, client.username);
             
-            // Also update UI if a fortress is currently selected
-            // (A more advanced event system would be better here, but this works)
-            const input = window.gameInput; // Hacky access to input instance
-            if (input && input.selectedSourceId) {
+            // Update UI if selection exists
+            const input = window.gameInput;
+            if (input && input.selectedSourceId !== null) {
                 const fort = fortresses[input.selectedSourceId];
                 ui.showFortressInfo(fort);
             }
@@ -36,15 +35,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // LINK UI TO CLIENT
+    ui.setClient(client);
+
     // 4. Setup Input
-    // We attach it to window so we can access it inside callbacks if needed (see above)
     const input = new InputHandler(renderer, client, ui);
     window.gameInput = input;
 
     // 5. Restart Button Logic
-    document.getElementById('restart-btn').addEventListener('click', () => {
-        client.restartGame();
-    });
+    const restartBtn = document.getElementById('btn-restart');
+    if (restartBtn) {
+        restartBtn.addEventListener('click', () => {
+            client.restartGame();
+        });
+    }
 
     // 6. Animation Loop
     function animate() {
