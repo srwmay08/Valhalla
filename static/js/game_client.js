@@ -4,7 +4,8 @@ export class GameClient {
         this.socket = io();
         this.callbacks = callbacks;
         
-        this.username = document.getElementById('username').innerText; 
+        // CORRECTION: ID matches index.html "username-store"
+        this.username = document.getElementById('username-store').innerText; 
         this.gameState = {
             fortresses: {},
             vertices: [],

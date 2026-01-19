@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const ui = new UIManager();
 
     // 2. Setup Renderer
-    const renderer = new GameRenderer('canvas-container'); // Fixed ID from previous index.html
+    // CORRECTION: ID matches index.html "game-container"
+    const renderer = new GameRenderer('game-container'); 
 
     // 3. Setup Game Client with callbacks to Renderer/UI
     const client = new GameClient({

@@ -4,8 +4,13 @@
     <style>
         #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-        .hud-panel { pointer-events: auto; background: rgba(0,0,0,0.7); color: white; padding: 10px; margin: 10px; border-radius: 5px; }
-        #fortress-info { position: absolute; bottom: 20px; right: 20px; display: none; }
+        .hud-panel { pointer-events: auto; background: rgba(0,0,0,0.8); color: white; padding: 15px; margin: 10px; border-radius: 8px; font-family: sans-serif; min-width: 200px; }
+        #game-ui { position: absolute; bottom: 20px; right: 20px; display: none; }
+        .stat-row { margin-bottom: 5px; }
+        .stat-label { color: #aaa; font-size: 0.9em; margin-right: 5px; }
+        h3, h4 { margin-top: 0; color: #ffcc00; }
+        button { background: #444; color: white; border: 1px solid #666; padding: 5px 10px; cursor: pointer; }
+        button:hover { background: #666; }
     </style>
 </head>
 <body>
@@ -14,12 +19,24 @@
     <div id="ui-layer">
         <div style="position: absolute; top: 10px; left: 10px;" class="hud-panel">
             <h3>I Have The High Ground</h3>
-            <button id="restart-btn">Restart Game</button>
+            <button id="btn-restart">Restart Game</button>
         </div>
         
-        <div id="fortress-info" class="hud-panel">
+        <div id="game-ui" class="hud-panel">
             <h4>Fortress Intel</h4>
-            <div id="info-content"></div>
+            
+            <div class="stat-row"><span class="stat-label">Land:</span> <span id="ui-land"></span></div>
+            <div class="stat-row"><span class="stat-label">Type:</span> <span id="ui-type"></span></div>
+            <div class="stat-row"><span class="stat-label">Owner:</span> <span id="ui-owner"></span></div>
+            <div class="stat-row"><span class="stat-label">Units:</span> <span id="ui-units"></span></div>
+            <div class="stat-row"><span class="stat-label">Tier:</span> <span id="ui-tier"></span></div>
+            <div class="stat-row"><span class="stat-label">Special:</span> <span id="ui-special"></span></div>
+
+            <div id="slider-container"></div>
+            
+            <div id="action-area" style="margin-top: 10px; display: none;">
+                <button id="btn-action" style="width: 100%;">SELECT SOURCE</button>
+            </div>
         </div>
     </div>
 
