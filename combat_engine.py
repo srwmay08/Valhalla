@@ -1,4 +1,8 @@
-from config import FORTRESS_TYPES, RACES, FLOW_RATE, TERRAIN_BONUSES
+import random
+from config import (
+    FORTRESS_TYPES, RACES, FLOW_RATE, TERRAIN_BONUSES, 
+    SPECIAL_UNITS, CLASS_MULTIPLIERS
+)
 from world_engine import darken_color
 
 # --- CONSTANTS ---
@@ -6,12 +10,7 @@ PACKET_SPEED = 0.05
 COLLISION_THRESHOLD = 0.05
 
 def get_fortress_dynamic_stats(fort):
-    """
-    Calculates the actual stats of a fortress based on:
-    1. Base Type (Tower, Farm, etc.)
-    2. Neighboring Terrains (Land Touch Bonuses)
-    3. Race Modifiers (if owned)
-    """
+    """Calculates stats based on type and terrain."""
     f_type = FORTRESS_TYPES.get(fort['type'], FORTRESS_TYPES["Keep"])
     
     stats = {
@@ -19,10 +18,10 @@ def get_fortress_dynamic_stats(fort):
         "def_mod": f_type["def_mod"],
         "cap": f_type["cap"],
         "gen_mult": f_type["gen_mult"],
-        "range": 0 # Base range bonus
+        "unit_class": f_type.get("unit_class", "Soldier"),
+        "range": 0 
     }
     
-    # Apply Land Touch Bonuses
     for t in fort.get("neighbor_terrains", []):
         if t in TERRAIN_BONUSES:
             b = TERRAIN_BONUSES[t]
@@ -35,11 +34,13 @@ def get_fortress_dynamic_stats(fort):
     return stats
 
 def process_sector_dominance(game_state):
-    """Checks which player owns complete sectors (faces) and updates visual colors."""
+    """Handles Dominion & Sanctuary Lifecycle."""
     changes_made = False
     face_ownership = {}
+    current_sanctuaries = game_state.get("sanctuaries", {})
     
     for idx, face in enumerate(game_state["faces"]):
+        face_id = str(idx)
         v1, v2, v3 = [str(x) for x in face]
         f1 = game_state["fortresses"].get(v1)
         f2 = game_state["fortresses"].get(v2)
@@ -50,13 +51,31 @@ def process_sector_dominance(game_state):
         o3 = f3.get('owner') if f3 else None
         
         if o1 and o1 == o2 and o2 == o3:
-            face_ownership[str(idx)] = o1
+            owner = o1
+            face_ownership[face_id] = owner
+            
+            avg_tier = (f1['tier'] + f2['tier'] + f3['tier']) / 3.0
+            
+            if face_id not in current_sanctuaries:
+                current_sanctuaries[face_id] = {
+                    "owner": owner,
+                    "avg_tier": avg_tier,
+                    "cooldown": 10, 
+                    "race": f1['race'] 
+                }
+                changes_made = True
+            else:
+                if current_sanctuaries[face_id]["avg_tier"] != avg_tier:
+                    current_sanctuaries[face_id]["avg_tier"] = avg_tier
+                    changes_made = True
         else:
-            face_ownership[str(idx)] = None
+            face_ownership[face_id] = None
+            if face_id in current_sanctuaries:
+                del current_sanctuaries[face_id]
+                changes_made = True
     
     if face_ownership != game_state.get("sector_owners", {}):
         game_state["sector_owners"] = face_ownership
-        
         for f_idx, owner in face_ownership.items():
             idx = int(f_idx)
             if owner:
@@ -69,27 +88,70 @@ def process_sector_dominance(game_state):
                 from config import TERRAIN_COLORS
                 t_type = game_state["face_terrain"][idx]
                 game_state["face_colors"][idx] = TERRAIN_COLORS.get(t_type, 0xff00ff)
-        
         changes_made = True
 
     return changes_made
 
+def process_special_spawns(game_state):
+    """Spawns Heroes and Titans from Sanctuaries."""
+    changes_made = False
+    edges = game_state.get("edges", {})
+    
+    for face_id, sanct in game_state.get("sanctuaries", {}).items():
+        if sanct["cooldown"] > 0:
+            sanct["cooldown"] -= 1
+            continue
+            
+        avg_tier = sanct["avg_tier"]
+        unit_type = "Titan" if avg_tier >= 2.5 else "Hero"
+        spec_stats = SPECIAL_UNITS[unit_type]
+        
+        sanct["cooldown"] = spec_stats["cooldown"]
+        
+        face_vertices = game_state["faces"][int(face_id)]
+        
+        v_a = random.choice(face_vertices)
+        v_b = random.choice([v for v in face_vertices if v != v_a])
+        edge_key = str(tuple(sorted((v_a, v_b))))
+        
+        if edge_key in edges:
+            edge = edges[edge_key]
+            direction = 1
+            
+            new_packet = {
+                "owner": sanct["owner"],
+                "race": sanct["race"],
+                "amount": spec_stats["size"],
+                "pos": 0.5, 
+                "direction": direction,
+                "type": unit_type, 
+                "unit_class": unit_type,
+                "atk_bonus": spec_stats["atk"],
+                "is_special": True,
+                "patrol_face": int(face_id) if unit_type == "Hero" else None 
+            }
+            
+            edge["packets"].append(new_packet)
+            changes_made = True
+            
+    return changes_made
+
 def process_combat_flows(game_state):
     """
-    Phase 1 & 2 Update: Streams + Dynamic Stats
+    Phase 4 Update: Checks for 'hazard' on edges and applies DPS.
     """
     changes_made = False
     edges = game_state.get("edges", {})
 
-    # --- STEP 1: SPAWN PACKETS ---
+    # 0. Process Special Spawns
+    if process_special_spawns(game_state):
+        changes_made = True
+
+    # 1. Standard Spawn (Keep/Firehose)
     for fid, fort in game_state["fortresses"].items():
         if not fort['paths'] or not fort['owner']: continue
         
-        # Use Dynamic Stats for Gen/Flow? 
-        # Flow is usually standard constant to represent "pipes", 
-        # but we could modify it by gen_mult? Let's keep flow standard for now.
         spawn_amount = FLOW_RATE 
-        
         if fort['units'] >= spawn_amount:
             for target_id in fort['paths']:
                 if fort['units'] < spawn_amount: break 
@@ -99,11 +161,9 @@ def process_combat_flows(game_state):
                 
                 if edge_key in edges:
                     fort['units'] -= spawn_amount
-                    
                     direction = 1 if u < v else -1
                     start_pos = 0.0 if direction == 1 else 1.0
                     
-                    # Store dynamic stats in packet snapshot
                     stats = get_fortress_dynamic_stats(fort)
                     
                     new_packet = {
@@ -113,23 +173,48 @@ def process_combat_flows(game_state):
                         "pos": start_pos,
                         "direction": direction,
                         "type": fort['type'],
-                        "atk_bonus": stats["atk_mod"] # Pass Atk Mod to packet
+                        "unit_class": stats["unit_class"],
+                        "atk_bonus": stats["atk_mod"],
+                        "is_special": False
                     }
                     edges[edge_key]["packets"].append(new_packet)
                     changes_made = True
 
-    # --- STEP 2 & 3: MOVE & CLASH ---
+    # 2. Movement & Combat
     for key, edge in edges.items():
         if not edge["packets"]: continue
         
-        edge["packets"].sort(key=lambda p: p["pos"])
+        has_mage_fwd = any(p["unit_class"] == "Mage" and p["direction"] == 1 for p in edge["packets"])
+        has_mage_rev = any(p["unit_class"] == "Mage" and p["direction"] == -1 for p in edge["packets"])
+        is_hazard = edge.get("hazard", False)
         
+        edge["packets"].sort(key=lambda p: p["pos"])
         active_packets = []
+        
         for p in edge["packets"]:
-            p["pos"] += p["direction"] * PACKET_SPEED
+            # Mage Buff
+            mage_mult = 1.0
+            if (p["direction"] == 1 and has_mage_fwd) or (p["direction"] == -1 and has_mage_rev):
+                mage_mult = 1.25
+            
+            p["current_buff"] = mage_mult
+            
+            # Phase 4: Apply Hazard Damage
+            if is_hazard and not p.get("is_special"): # Special units might be immune? Assuming no for now.
+                p["amount"] -= 1.0 # 1 DPS per tick
+            
+            # Move
+            speed = PACKET_SPEED
+            if p.get("is_special"):
+                s_type = p["type"]
+                if s_type in SPECIAL_UNITS:
+                    speed *= SPECIAL_UNITS[s_type]["speed"]
+            
+            p["pos"] += p["direction"] * speed
             p["pos"] = max(0.0, min(1.0, p["pos"]))
             active_packets.append(p)
             
+        # Clash Logic
         forward_flow = [p for p in active_packets if p["direction"] == 1] 
         reverse_flow = [p for p in active_packets if p["direction"] == -1] 
         
@@ -154,7 +239,7 @@ def process_combat_flows(game_state):
 
         edge["packets"] = [p for p in active_packets if p["amount"] > 0]
 
-    # --- STEP 4: ARRIVALS ---
+    # 3. Arrivals & Patrol Logic
     for key, edge in edges.items():
         surviving_packets = []
         for p in edge["packets"]:
@@ -169,10 +254,14 @@ def process_combat_flows(game_state):
                 arrived = True
                 
             if arrived and target_id:
-                target = game_state["fortresses"].get(target_id)
-                if target:
-                    apply_packet_arrival(target, p, game_state)
+                if p.get("unit_class") == "Hero" and p.get("patrol_face") is not None:
+                    redirect_hero(p, target_id, game_state)
                     changes_made = True
+                else:
+                    target = game_state["fortresses"].get(target_id)
+                    if target:
+                        apply_packet_arrival(target, p, game_state)
+                        changes_made = True
             else:
                 surviving_packets.append(p)
                 
@@ -180,38 +269,61 @@ def process_combat_flows(game_state):
         
     return changes_made
 
-def calculate_packet_damage(attacker, defender, game_state, is_clash=False):
-    """
-    Calculates damage.
-    Phase 2: Uses the 'atk_bonus' snapshot carried by the packet.
-    """
-    atk_race = RACES.get(attacker['race'], RACES["Human"])
+def redirect_hero(packet, current_node_id, game_state):
+    """Moves a Hero packet to the next edge along the perimeter."""
+    face_id = packet["patrol_face"]
+    face = game_state["faces"][face_id]
     
-    # Base Power
+    curr = int(current_node_id)
+    if curr not in face:
+        packet["amount"] = 0
+        return
+
+    idx = face.index(curr)
+    next_v = face[(idx + 1) % 3] 
+    
+    next_edge_key = str(tuple(sorted((curr, next_v))))
+    edges = game_state["edges"]
+    
+    if next_edge_key in edges:
+        direction = 1 if curr < next_v else -1
+        start_pos = 0.0 if direction == 1 else 1.0
+        
+        packet["pos"] = start_pos
+        packet["direction"] = direction
+        edges[next_edge_key]["packets"].append(packet)
+    else:
+        packet["amount"] = 0
+
+def calculate_packet_damage(attacker, defender, game_state, is_clash=False):
+    """Calculates damage with class multipliers."""
+    atk_race = RACES.get(attacker['race'], RACES["Human"])
     base_pwr = atk_race.get('base_atk', 1.0)
     
-    # Fortress/Terrain Bonus (Carried in packet)
     fort_bonus = attacker.get("atk_bonus", 1.0)
+    mage_buff = attacker.get("current_buff", 1.0)
     
-    total_mult = base_pwr * fort_bonus
+    class_mult = 1.0
+    atk_class = attacker.get("unit_class", "Soldier")
+    
+    def_type = "Unit"
+    if not is_clash and isinstance(defender, dict) and "units" in defender:
+        def_type = "Fortress" 
+        
+    if atk_class in CLASS_MULTIPLIERS:
+        class_mult = CLASS_MULTIPLIERS[atk_class].get(def_type, 1.0)
+    
+    total_mult = base_pwr * fort_bonus * mage_buff * class_mult
     
     return attacker['amount'] * total_mult
 
 def apply_packet_arrival(target, packet, game_state):
-    """
-    Handles logic when a packet hits a fortress.
-    Phase 2: Uses Dynamic Defense Stats.
-    """
-    
     # --- Reinforcement ---
     if target['owner'] == packet['owner']:
-        stats = get_fortress_dynamic_stats(target)
-        if target['units'] < stats['cap'] * 2:
-            target['units'] += packet['amount']
+        target['units'] += packet['amount']
             
     # --- Siege / Attack ---
     else:
-        # Get Dynamic Defense
         def_stats = get_fortress_dynamic_stats(target)
         def_race = RACES.get(target['race'], RACES["Neutral"])
         
@@ -221,7 +333,6 @@ def apply_packet_arrival(target, packet, game_state):
         defense_val = target['units'] * def_mult
         
         if damage > defense_val:
-            # Capture
             target['owner'] = packet['owner']
             target['race'] = packet['race']
             target['units'] = 1.0

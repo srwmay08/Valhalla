@@ -11,8 +11,13 @@ export class GameRenderer {
         this.controls = null;
         this.sphereMesh = null;
         this.fortressMeshes = {};
-        this.pathLines = {}; // Store lines for attack paths
+        this.pathLines = {}; 
         
+        // Phase 4: Packet Visualization
+        this.packetMesh = null;
+        this.dummy = new THREE.Object3D(); // Helper for matrix calculation
+        this.vertices = []; // Store vertices for lerping
+
         this.init();
     }
 
@@ -32,6 +37,13 @@ export class GameRenderer {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
+        // Initialize InstancedMesh for Packets (Pool size 2000)
+        const geometry = new THREE.SphereGeometry(0.012, 8, 8);
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        this.packetMesh = new THREE.InstancedMesh(geometry, material, 2000);
+        this.packetMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.scene.add(this.packetMesh);
+
         // Resize Listener
         window.addEventListener('resize', () => this.onWindowResize(), false);
     }
@@ -43,15 +55,15 @@ export class GameRenderer {
     }
 
     initWorld(vertices, faces, faceColors) {
-        // Clear old mesh if exists
+        // Store vertices for packet interpolation
+        this.vertices = vertices;
+
         if (this.sphereMesh) this.scene.remove(this.sphereMesh);
 
         const geometry = new THREE.BufferGeometry();
         const positions = [];
         const colors = [];
 
-        // Build geometry from faces
-        // Note: We duplicate vertices per face to allow flat shading/coloring per face
         faces.forEach((face, faceIdx) => {
             const vA = vertices[face[0]];
             const vB = vertices[face[1]];
@@ -76,18 +88,17 @@ export class GameRenderer {
         });
 
         this.sphereMesh = new THREE.Mesh(geometry, material);
-        this.sphereMesh.userData = { type: 'world' }; // ID for Raycaster
+        this.sphereMesh.userData = { type: 'world' }; 
         this.scene.add(this.sphereMesh);
 
         this.initFortressVisuals(vertices);
     }
 
     initFortressVisuals(vertices) {
-        // Simple spheres for fortresses at vertices
         const geom = new THREE.SphereGeometry(0.04, 16, 16);
         
         vertices.forEach((v, idx) => {
-            const mat = new THREE.MeshBasicMaterial({ color: 0x888888 }); // Neutral gray
+            const mat = new THREE.MeshBasicMaterial({ color: 0x888888 }); 
             const mesh = new THREE.Mesh(geom, mat);
             mesh.position.set(v[0], v[1], v[2]);
             mesh.userData = { type: 'fortress', id: idx };
@@ -104,18 +115,14 @@ export class GameRenderer {
         
         faceColors.forEach((colorHex, i) => {
             const color = new THREE.Color(colorHex);
-            // Each face has 3 vertices * 3 rgb values = 9 values
             const baseIndex = i * 9;
             
-            // Vertex 1
             colors[baseIndex] = color.r;
             colors[baseIndex+1] = color.g;
             colors[baseIndex+2] = color.b;
-            // Vertex 2
             colors[baseIndex+3] = color.r;
             colors[baseIndex+4] = color.g;
             colors[baseIndex+5] = color.b;
-            // Vertex 3
             colors[baseIndex+6] = color.r;
             colors[baseIndex+7] = color.g;
             colors[baseIndex+8] = color.b;
@@ -129,32 +136,24 @@ export class GameRenderer {
             const mesh = this.fortressMeshes[fort.id];
             if (!mesh) return;
 
-            // Update Color based on Owner
-            let color = 0x888888; // Neutral
+            let color = 0x888888; 
             if (fort.owner) {
-                // Determine color logic (could be passed from backend or mapped here)
-                // For now, simple logic:
-                if (fort.owner === currentUsername) color = 0x00ff00; // Green for you
-                else if (fort.owner === 'Gorgon') color = 0xff0000; // Red for AI
-                else color = 0x0000ff; // Blue for others
+                if (fort.owner === currentUsername) color = 0x00ff00; 
+                else if (fort.owner === 'Gorgon') color = 0xff0000; 
+                else color = 0x0000ff; 
             }
             mesh.material.color.setHex(color);
 
-            // Scale based on Tier (Visual feedback)
             const scale = 1 + (fort.tier - 1) * 0.3;
             mesh.scale.set(scale, scale, scale);
             
-            // Draw Attack Paths (Lines)
             this.updatePathVisuals(fort);
         });
     }
 
     updatePathVisuals(fort) {
-        // Clear old paths for this fortress if they exist
-        // (Simplified: In a real engine you'd update geometry rather than recreate)
         const keyPrefix = `path_${fort.id}_`;
         
-        // Remove existing lines for this source
         for (const key in this.pathLines) {
             if (key.startsWith(keyPrefix)) {
                 this.scene.remove(this.pathLines[key]);
@@ -183,11 +182,59 @@ export class GameRenderer {
         });
     }
 
+    updatePackets(edgeData) {
+        // Phase 4: Render moving unit packets using InstancedMesh
+        if (!this.packetMesh || !this.vertices.length) return;
+
+        let instanceIdx = 0;
+        const limit = 2000;
+
+        Object.values(edgeData).forEach(edge => {
+            if (!edge.packets || edge.packets.length === 0) return;
+
+            // Get start/end coordinates from vertex array
+            const uCoords = this.vertices[edge.u];
+            const vCoords = this.vertices[edge.v];
+            
+            const startVec = new THREE.Vector3(uCoords[0], uCoords[1], uCoords[2]);
+            const endVec = new THREE.Vector3(vCoords[0], vCoords[1], vCoords[2]);
+
+            edge.packets.forEach(packet => {
+                if (instanceIdx >= limit) return;
+
+                // Lerp Position based on packet.pos (0.0 to 1.0)
+                // packet.pos is absolute relative to edge direction? 
+                // The edge stores U and V. Packet direction 1 means U->V, -1 means V->U.
+                // However, world_engine updates packet.pos relative to U->V vector (0.0=U, 1.0=V).
+                // So simple lerp works.
+                
+                const currentPos = new THREE.Vector3().lerpVectors(startVec, endVec, packet.pos);
+                
+                this.dummy.position.copy(currentPos);
+                
+                // Visual scale based on amount
+                const s = Math.min(3.0, 1.0 + (packet.amount / 50.0)); 
+                this.dummy.scale.set(s, s, s);
+                
+                this.dummy.updateMatrix();
+                this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
+                
+                instanceIdx++;
+            });
+        });
+
+        // Hide unused instances by zeroing scale
+        const zeroMatrix = new THREE.Matrix4().set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        for (let i = instanceIdx; i < limit; i++) {
+            this.packetMesh.setMatrixAt(i, zeroMatrix);
+        }
+
+        this.packetMesh.instanceMatrix.needsUpdate = true;
+    }
+
     focusCamera(pos) {
-        // pos is [x, y, z] array
-        // Smoothly tween camera (optional, or just set for now)
         const target = new THREE.Vector3(pos[0], pos[1], pos[2]);
-        this.camera.position.copy(target.multiplyScalar(2.0)); // Zoom out a bit
+        this.camera.position.copy(target.multiplyScalar(2.0)); 
         this.camera.lookAt(0, 0, 0);
     }
 

@@ -196,18 +196,46 @@ def generate_game_world():
         is_near_plain = any(face_terrain[n] == "Plain" for n in face_neighbors[i])
         if is_near_plain and random.random() < SPAWN_CHANCE_FARM: face_terrain[i] = "Farm"
 
-    # 5. Filter Roads based on Water
+    # 5. Filter Roads based on Water and Identify Hazards (Lava)
+    edge_to_faces = {}
+    for face_idx, face in enumerate(faces):
+        # Create edges for this face
+        f_edges = [
+            tuple(sorted((face[0], face[1]))),
+            tuple(sorted((face[1], face[2]))),
+            tuple(sorted((face[2], face[0])))
+        ]
+        for e in f_edges:
+            if e not in edge_to_faces:
+                edge_to_faces[e] = []
+            edge_to_faces[e].append(face_idx)
+
     invalid_edges = set()
-    for face_idx, terrain in enumerate(face_terrain):
-        if terrain in ["Sea", "Deep Sea"]:
-            f = faces[face_idx]
-            edges = [
-                tuple(sorted((f[0], f[1]))),
-                tuple(sorted((f[1], f[2]))),
-                tuple(sorted((f[2], f[0])))
-            ]
-            for e in edges:
-                invalid_edges.add(e)
+    lava_edges = set()
+
+    for e, f_indices in edge_to_faces.items():
+        # Check Deep Sea / Sea (Removal)
+        is_water = False
+        for f_idx in f_indices:
+            t = face_terrain[f_idx]
+            if t == "Deep Sea": 
+                is_water = True
+                break
+            if t == "Sea":
+                is_water = True
+                break
+        
+        if is_water:
+            invalid_edges.add(e)
+            continue # Don't process hazards if the edge is removed
+
+        # Check Lava (Hazard)
+        # An edge is a "Lava River" if it connects two Lava faces
+        if len(f_indices) == 2:
+            t1 = face_terrain[f_indices[0]]
+            t2 = face_terrain[f_indices[1]]
+            if t1 == "Lava" and t2 == "Lava":
+                lava_edges.add(e)
     
     valid_roads = roads - invalid_edges
     
@@ -218,18 +246,25 @@ def generate_game_world():
     
     face_colors = [TERRAIN_COLORS.get(t, 0xff00ff) for t in face_terrain]
 
-    # Initialize Edges Logic (Phase 1 Requirement)
-    # We explicitly store edge data for the "Stream" system
+    # Initialize Edges Logic (Stream System + Hazards)
     edges_data = {}
     for u, v in valid_roads:
-        key = tuple(sorted((u, v)))
-        edges_data[str(key)] = {
+        key_tuple = tuple(sorted((u, v)))
+        key_str = str(key_tuple)
+        
+        is_hazard = key_tuple in lava_edges
+
+        edges_data[key_str] = {
             "u": u,
             "v": v,
-            "packets": [],      # List of UnitPacket objects (dicts)
-            "battle_point": 0.5, # Where the clash happens (0.0 to 1.0)
-            "contested": False
+            "packets": [],      
+            "battle_point": 0.5, 
+            "contested": False,
+            "hazard": is_hazard # Phase 4: Flag for Combat Engine
         }
+
+    # Initialize Sanctuaries (Phase 3 Placeholder structure)
+    sanctuaries = {}
 
     return {
         "vertices": vertices,
@@ -238,5 +273,6 @@ def generate_game_world():
         "face_terrain": face_terrain,
         "adj": {k: list(v) for k, v in new_adj.items()},
         "roads": list(valid_roads),
-        "edges": edges_data # NEW: Explicit edge tracking
+        "edges": edges_data,
+        "sanctuaries": sanctuaries
     }
