@@ -218,11 +218,25 @@ def generate_game_world():
     
     face_colors = [TERRAIN_COLORS.get(t, 0xff00ff) for t in face_terrain]
 
+    # Initialize Edges Logic (Phase 1 Requirement)
+    # We explicitly store edge data for the "Stream" system
+    edges_data = {}
+    for u, v in valid_roads:
+        key = tuple(sorted((u, v)))
+        edges_data[str(key)] = {
+            "u": u,
+            "v": v,
+            "packets": [],      # List of UnitPacket objects (dicts)
+            "battle_point": 0.5, # Where the clash happens (0.0 to 1.0)
+            "contested": False
+        }
+
     return {
         "vertices": vertices,
         "faces": faces,
         "face_colors": face_colors,
         "face_terrain": face_terrain,
         "adj": {k: list(v) for k, v in new_adj.items()},
-        "roads": list(valid_roads)
+        "roads": list(valid_roads),
+        "edges": edges_data # NEW: Explicit edge tracking
     }

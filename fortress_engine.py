@@ -6,59 +6,66 @@ from config import (
 
 def initialize_fortresses(game_state):
     """
-    Creates the initial state for all fortresses.
-    Determines fortress terrain based on surrounding faces to enforce construction rules.
+    Creates the initial state for all fortresses (Vertices).
+    Phase 2 Logic: 
+    - Vertices are now defined by the 3 faces they touch (Intersection Nodes).
+    - Structure options are a union of options from all neighbors.
     """
     num_vertices = len(game_state["vertices"])
     faces = game_state["faces"]
     face_terrain = game_state["face_terrain"]
     
-    # 1. Determine Terrain for each Vertex (Fortress)
-    # A vertex is a shared point. We prioritize restrictive terrain.
-    # Priority: Mountain > Waste > Lava > Swamp > Forest > Hill > Farm > Plain
-    terrain_priority = {
-        "Mountain": 10, "Lava": 9, "Waste": 8, "Swamp": 7, 
-        "Forest": 6, "Hill": 5, "Farm": 4, "Plain": 1, 
-        "Deep Sea": 0, "Sea": 0, "None": 0
-    }
+    # 1. Map Vertices to Neighboring Terrains
+    # Each vertex touches 3 faces in a dual-mesh, though 
+    # implementation might vary slightly with subdivisions.
+    # We iterate faces and assign them to their vertices.
+    vertex_neighbors = {i: set() for i in range(num_vertices)}
     
-    vertex_terrain = {}
-    
-    # Initialize with default
-    for i in range(num_vertices):
-        vertex_terrain[i] = "Plain"
-
-    # Iterate faces to project terrain onto vertices
     for f_idx, face in enumerate(faces):
         t = face_terrain[f_idx]
-        p = terrain_priority.get(t, 0)
         for v in face:
-            curr_t = vertex_terrain.get(v, "Plain")
-            curr_p = terrain_priority.get(curr_t, 0)
-            if p > curr_p:
-                vertex_terrain[v] = t
-
+            vertex_neighbors[v].add(t)
+            
     fortresses = {}
     
     for i in range(num_vertices):
-        v_terrain = vertex_terrain[i]
+        neighbors = list(vertex_neighbors[i])
         
-        # Get valid types for this terrain
-        allowed_types = TERRAIN_BUILD_OPTIONS.get(v_terrain, TERRAIN_BUILD_OPTIONS["Default"])
+        # 2. Build Structure Pool (Intersection Logic)
+        # Valid structures are the UNION of valid structures for all neighbors.
+        # e.g., Mountain + Farm = can build Mine OR Barn.
+        valid_pool = set()
+        for t in neighbors:
+            options = TERRAIN_BUILD_OPTIONS.get(t, TERRAIN_BUILD_OPTIONS["Default"])
+            valid_pool.update(options)
+            
+        # Convert back to list for selection
+        valid_pool_list = list(valid_pool)
         
-        # Filter global FORTRESS_TYPES to find valid ones
-        valid_keys = [k for k in FORTRESS_TYPES.keys() if k in allowed_types]
-        if not valid_keys: 
-            valid_keys = ["Keep"] # Fallback
+        # Fallback
+        if not valid_pool_list:
+            valid_pool_list = ["Keep"]
 
-        # Select type based on probabilities of valid types
-        # Normalize probabilities
-        total_prob = sum(FORTRESS_TYPES[k]["prob"] for k in valid_keys)
+        # 3. Select Type (Weighted Probability)
+        # We must filter the global probabilities by our valid pool
+        weighted_options = {}
+        total_prob = 0.0
+        
+        for ftype in valid_pool_list:
+            # Check if type exists in config
+            if ftype in FORTRESS_TYPES:
+                prob = FORTRESS_TYPES[ftype]["prob"]
+                weighted_options[ftype] = prob
+                total_prob += prob
+                
         if total_prob > 0:
-            weights = [FORTRESS_TYPES[k]["prob"] / total_prob for k in valid_keys]
-            ftype = random.choices(valid_keys, weights=weights, k=1)[0]
+            choice = random.choices(
+                list(weighted_options.keys()), 
+                weights=list(weighted_options.values()), 
+                k=1
+            )[0]
         else:
-            ftype = "Keep"
+            choice = "Keep"
 
         fortresses[str(i)] = {
             "id": i, 
@@ -69,47 +76,73 @@ def initialize_fortresses(game_state):
             "special_active": False,
             "tier": 1, 
             "paths": [],
-            "type": ftype,
-            "land_type": v_terrain # Store for UI/Validation
+            "type": choice,
+            "neighbor_terrains": neighbors, # Store for "Land Touch" bonuses
+            "base_stats": {}, # Placeholder for dynamic calc
+            "current_stats": {} # Placeholder for dynamic calc
         }
+        
     return fortresses
 
 def process_fortress_production(game_state):
     """
     Handles unit generation for all fortresses.
-    Constraint: Only generates units if NOT attacking (paths is empty).
+    Phase 1 "Firehose" + Phase 2 Dynamic Stats.
     """
     changes_made = False
+    
+    # We need to import the calculator from combat_engine 
+    # OR replicate the logic. Ideally, stats are calculated once/cached,
+    # but for safety let's assume we pull from a helper or recalc.
+    # To avoid circular imports, we'll do a simple lookup here or
+    # rely on combat_engine to update stats? 
+    # For now, let's just use the raw config + neighbors here for Gen Rate.
+    
+    from config import FORTRESS_TYPES, TERRAIN_BONUSES
     
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
         
-        # PRODUCTION CONSTRAINT: Only if not attacking
-        if fort['paths']:
-            continue
-        
+        # Base Stats
         f_type_stats = FORTRESS_TYPES[fort['type']]
-        cap = f_type_stats['cap']
+        base_cap = f_type_stats['cap']
+        base_gen = f_type_stats['gen_mult']
         
-        # Check Dominance Bonus
+        # Apply Land Touch Bonuses (Gen & Cap)
+        bonus_cap = 0
+        bonus_gen = 0.0
+        
+        for t in fort['neighbor_terrains']:
+            if t in TERRAIN_BONUSES:
+                bonus_cap += TERRAIN_BONUSES[t].get("cap", 0)
+                bonus_gen += TERRAIN_BONUSES[t].get("gen_mult", 0.0)
+                
+        final_cap = base_cap + bonus_cap
+        final_gen = base_gen + bonus_gen
+        
+        # Dominance Bonus (Face control)
+        # Check if this fortress touches a face that is fully owned
         has_dominance_bonus = False
+        # (This check requires iterating faces, which is expensive. 
+        # Optimized approach: `process_sector_dominance` should flag fortresses)
+        # For now, sticking to the Phase 1 logic:
         for f_idx, face in enumerate(game_state["faces"]):
             if int(fid) in face:
                 if game_state["sector_owners"].get(str(f_idx)) == fort['owner']:
                     has_dominance_bonus = True
                     break
-                    
-        if fort['units'] < cap:
-            growth = 1.0 * f_type_stats['gen_mult']
-            if has_dominance_bonus: growth *= 1.5
+        
+        if has_dominance_bonus:
+            final_gen *= 1.5
             
-            fort['units'] = min(cap, fort['units'] + growth)
+        if fort['units'] < final_cap:
+            fort['units'] = min(final_cap, fort['units'] + final_gen)
             changes_made = True
             
     return changes_made
 
 def process_fortress_upgrades(game_state):
-    """Handles automatic upgrading logic (if enabled) or pre-checks."""
+    """Handles automatic upgrading logic."""
     changes_made = False
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
@@ -118,13 +151,11 @@ def process_fortress_upgrades(game_state):
         if current_tier < 3:
             cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
             
-            # Simple auto-upgrade logic for AI or lazy players (can be refined)
             if fort['units'] >= cost + 10:
                 fort['units'] -= cost
                 fort['tier'] += 1
                 changes_made = True
 
-        # Enforce Path Limit
         if len(fort['paths']) > fort['tier']:
             fort['paths'] = fort['paths'][:fort['tier']]
             changes_made = True
