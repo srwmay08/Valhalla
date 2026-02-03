@@ -21,6 +21,7 @@ export class GameRenderer {
     }
 
     init() {
+        console.log("[RENDERER] Initializing WebGL Scene...");
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.container.appendChild(this.renderer.domElement);
         
@@ -51,6 +52,9 @@ export class GameRenderer {
     }
 
     initWorld(vertices, faces, faceColors) {
+        console.group("[RENDERER] World Initialization");
+        console.log("Vertices:", vertices.length);
+        console.log("Faces:", faces.length);
         this.vertices = vertices;
 
         if (this.sphereMesh) {
@@ -89,6 +93,7 @@ export class GameRenderer {
         this.scene.add(this.sphereMesh);
 
         this.initFortressVisuals(vertices);
+        console.groupEnd();
     }
 
     initFortressVisuals(vertices) {
@@ -143,6 +148,9 @@ export class GameRenderer {
     }
 
     updateFortresses(fortressData, currentUsername) {
+        console.groupCollapsed("[RENDERER] Updating Fortresses");
+        console.log("Current Local User:", currentUsername);
+
         Object.values(fortressData).forEach(fort => {
             const group = this.fortressMeshes[fort.id];
             if (!group) {
@@ -152,10 +160,11 @@ export class GameRenderer {
             let color = 0x888888; 
             if (fort.owner) {
                 if (fort.owner === currentUsername) {
-                    color = 0xff0000;
-                } else if (fort.owner === 'Gorgon') {
+                    color = 0xff0000; // Red for Player
+                    console.log(`Fortress ${fort.id} owned by PLAYER. Setting color to RED.`);
+                } else if (fort.owner.includes('Green')) {
                     color = 0x00ff00;
-                } else if (fort.owner === 'Midas') {
+                } else if (fort.owner.includes('Yellow')) {
                     color = 0xffff00;
                 } else {
                     color = 0x0000ff;
@@ -169,6 +178,7 @@ export class GameRenderer {
             
             this.updatePathVisuals(fort, color);
         });
+        console.groupEnd();
     }
 
     updatePathVisuals(fort, teamColor) {
@@ -255,7 +265,7 @@ export class GameRenderer {
                     this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
                     
                     let pColor = new THREE.Color(0xffffff);
-                    if (packet.owner === 'Gorgon') {
+                    if (packet.owner.includes('Green')) {
                         pColor.setHex(0x00ff00);
                     } else {
                         pColor.setHex(0xff0000);

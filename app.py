@@ -21,7 +21,8 @@ from config import (
 )
 
 # --- Configuration Overrides ---
-RACES["Human"]["color"] = 0xff0000  
+# Ensuring strict alignment with user request: Player is Red, NPC 1 is Green
+RACES["Human"]["color"] = 0xff0000
 RACES["Orc"]["color"] = 0x00ff00
 
 AI_NAME = "Gorgon"
@@ -83,7 +84,8 @@ def load_user(user_id):
 def background_thread():
     while True:
         socketio.sleep(TICK_RATE)
-        if not game_state["initialized"]: continue
+        if not game_state["initialized"]:
+            continue
             
         map_changed = False
         color_changed = False
@@ -118,51 +120,73 @@ def background_thread():
 def create_app():
     app = Flask(__name__)
     app.config.from_object('config')
-    mongo.init_app(app); bcrypt.init_app(app); socketio.init_app(app); login_manager.init_app(app)
+    mongo.init_app(app)
+    bcrypt.init_app(app)
+    socketio.init_app(app)
+    login_manager.init_app(app)
 
     @app.route('/')
     @login_required
     def index():
-        if not current_user.username: return redirect(url_for('create_username'))
+        if not current_user.username:
+            return redirect(url_for('create_username'))
         return render_template('index.html', user=current_user)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
-        if current_user.is_authenticated: return redirect(url_for('index'))
+        if current_user.is_authenticated:
+            return redirect(url_for('index'))
         if request.method == 'POST':
-            email = request.form.get('email'); password = request.form.get('password')
+            email = request.form.get('email')
+            password = request.form.get('password')
             try:
                 user_doc = mongo.db.users.find_one({"email": email})
                 if user_doc and User(user_doc).check_password(password):
                     login_user(User(user_doc))
-                    return redirect(url_for('create_username')) if not User(user_doc).username else redirect(url_for('index'))
-            except Exception as e: print(f"DEBUG: Login error: {e}")
+                    if not User(user_doc).username:
+                        return redirect(url_for('create_username'))
+                    else:
+                        return redirect(url_for('index'))
+            except Exception as e:
+                print(f"DEBUG: Login error: {e}")
             flash('Login Unsuccessful.', 'danger')
         return render_template('login.html', title='Login')
 
     @app.route('/register', methods=['GET', 'POST'])
     def register():
-        if current_user.is_authenticated: return redirect(url_for('index'))
+        if current_user.is_authenticated:
+            return redirect(url_for('index'))
         if request.method == 'POST':
-            email = request.form.get('email'); password = request.form.get('password')
+            email = request.form.get('email')
+            password = request.form.get('password')
             try:
-                if mongo.db.users.find_one({"email": email}): flash('Email in use.', 'danger'); return redirect(url_for('register'))
+                if mongo.db.users.find_one({"email": email}):
+                    flash('Email in use.', 'danger')
+                    return redirect(url_for('register'))
                 hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
                 mongo.db.users.insert_one({'email': email, 'password_hash': hashed_pw, 'username': None, 'race': None})
-                flash('Account created!', 'success'); return redirect(url_for('login'))
-            except Exception as e: print(f"DEBUG: Register error: {e}"); flash('Error.', 'danger')
+                flash('Account created!', 'success')
+                return redirect(url_for('login'))
+            except Exception as e:
+                print(f"DEBUG: Register error: {e}")
+                flash('Error.', 'danger')
         return render_template('registration.html', title='Register')
 
     @app.route('/logout')
-    def logout(): logout_user(); return redirect(url_for('login'))
+    def logout():
+        logout_user()
+        return redirect(url_for('login'))
         
     @app.route('/create_username', methods=['GET', 'POST'])
     @login_required
     def create_username():
-        if current_user.username: return redirect(url_for('index'))
+        if current_user.username:
+            return redirect(url_for('index'))
         if request.method == 'POST':
             new_username = request.form.get('username')
-            if mongo.db.users.find_one({"username": new_username}): flash('Taken.', 'danger'); return redirect(url_for('create_username'))
+            if mongo.db.users.find_one({"username": new_username}):
+                flash('Taken.', 'danger')
+                return redirect(url_for('create_username'))
             mongo.db.users.update_one({'_id': ObjectId(current_user.get_id())}, {'$set': {'username': new_username, 'race': 'Human'}})
             return redirect(url_for('index'))
         return render_template('create_username.html', title='Create Username')
@@ -170,16 +194,23 @@ def create_app():
     @app.route('/api/gamestate')
     def get_gamestate_api():
         if not game_state["initialized"]: 
+            print("[SERVER] Initializing world for the first time...")
             world_data = world_engine.generate_game_world()
             game_state.update(world_data)
             game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
             game_state["initialized"] = True
-                    # Need to include constants for frontend
+            
+        print(f"[SERVER DEBUG] API GameState requested by {current_user.username if current_user.is_authenticated else 'Anonymous'}")
+        
         from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
         return jsonify({
-            "vertices": game_state["vertices"], "faces": game_state["faces"],
-            "face_colors": game_state["face_colors"], "roads": game_state["roads"],
-            "fortresses": game_state["fortresses"], "adj": game_state["adj"], "races": RACES,
+            "vertices": game_state["vertices"],
+            "faces": game_state["faces"],
+            "face_colors": game_state["face_colors"],
+            "roads": game_state["roads"],
+            "fortresses": game_state["fortresses"],
+            "adj": game_state["adj"],
+            "races": RACES,
             "fortress_types": FORTRESS_TYPES,
             "terrain_build_options": TERRAIN_BUILD_OPTIONS
         })
@@ -188,8 +219,10 @@ def create_app():
     def handle_connect():
         global thread
         with thread_lock:
-            if thread is None: thread = socketio.start_background_task(background_thread)
+            if thread is None:
+                thread = socketio.start_background_task(background_thread)
         if current_user.is_authenticated:
+            print(f"[SERVER DEBUG] Client Connected: {current_user.username}")
             emit('update_face_colors', game_state["face_colors"])
             emit('update_map', game_state["fortresses"])
             assign_home_sector(current_user)
@@ -197,10 +230,9 @@ def create_app():
     @socketio.on('restart_game')
     @login_required
     def handle_restart():
-        # Regenerate World
+        print(f"[SERVER] Game Restart triggered by {current_user.username}")
         world_data = world_engine.generate_game_world()
         game_state.update(world_data)
-        # Pass game_state
         game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
         game_state["sector_owners"] = {}
         
@@ -209,13 +241,14 @@ def create_app():
         emit('update_face_colors', game_state["face_colors"], broadcast=True)
 
     def assign_home_sector(user):
-        """Assigns a sector using logic similar to original, but using new structure."""
+        """Assigns a sector and logs detailed coordinate/ownership data for debugging."""
         spawn_ai_sector()
         
         existing_forts = [f for f in game_state["fortresses"].values() if f['owner'] == user.username]
         if existing_forts:
             vid = int(existing_forts[0]['id'])
             v_pos = game_state["vertices"][vid]
+            print(f"[DEBUG] User {user.username} already has territory. Focusing camera at {v_pos}")
             emit('focus_camera', {'position': v_pos})
             return 
         
@@ -225,30 +258,41 @@ def create_app():
         def try_spawn(allowed_terrains=None):
             for i, face in available_faces:
                 terrain = game_state.get("face_terrain", [])[i]
-                if allowed_terrains and terrain not in allowed_terrains: continue
-                if terrain in ["Deep Sea", "Sea"]: continue
+                if allowed_terrains and terrain not in allowed_terrains:
+                    continue
+                if terrain in ["Deep Sea", "Sea"]:
+                    continue
                 
                 v1, v2, v3 = [str(x) for x in face]
-                f1, f2, f3 = game_state["fortresses"].get(v1), game_state["fortresses"].get(v2), game_state["fortresses"].get(v3)
+                f1 = game_state["fortresses"].get(v1)
+                f2 = game_state["fortresses"].get(v2)
+                f3 = game_state["fortresses"].get(v3)
                 
-                if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
-                if f1['owner'] or f2['owner'] or f3['owner']: continue
+                if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'):
+                    continue
+                if f1['owner'] or f2['owner'] or f3['owner']:
+                    continue
 
-                # SUCCESS
+                # Player assignment (RED)
                 race_color = RACES["Human"]["color"]
                 game_state["face_colors"][i] = world_engine.darken_color(race_color, factor=0.4)
                 
                 units_per_base = STARTING_UNITS_POOL // 3
+                print(f"[DEBUG] Assigning Home Sector {i} to {user.username} (Color: RED)")
+                
                 for vid in [v1, v2, v3]:
-                    # Default to Keep for capital
                     game_state["fortresses"][vid].update({
-                        "owner": user.username, "units": units_per_base, "race": "Human",
-                        "is_capital": True, "special_active": True, "tier": 1, "paths": [],
+                        "owner": user.username,
+                        "units": units_per_base,
+                        "race": "Human",
+                        "is_capital": True,
+                        "special_active": True,
+                        "tier": 1,
+                        "paths": [],
                         "type": "Keep" 
                     })
                 game_state["sector_owners"][str(i)] = user.username
                 
-                # Camera Focus
                 coords1 = game_state["vertices"][int(v1)]
                 coords2 = game_state["vertices"][int(v2)]
                 coords3 = game_state["vertices"][int(v3)]
@@ -268,30 +312,43 @@ def create_app():
         emit('update_map', game_state["fortresses"], broadcast=True)
 
     def spawn_ai_sector():
+        """Spawns NPC sector (GREEN/Gorgon)."""
         for f in game_state["fortresses"].values():
-            if f['owner'] == AI_NAME: return
+            if f['owner'] == AI_NAME:
+                return
         
         available_faces = list(enumerate(game_state["faces"]))
         random.shuffle(available_faces)
         
         for i, face in available_faces:
             terrain = game_state.get("face_terrain", [])[i]
-            if terrain in ["Deep Sea", "Sea", "Mountain"]: continue
+            if terrain in ["Deep Sea", "Sea", "Mountain"]:
+                continue
             
             v1, v2, v3 = [str(x) for x in face]
-            f1, f2, f3 = game_state["fortresses"][v1], game_state["fortresses"][v2], game_state["fortresses"][v3]
+            f1 = game_state["fortresses"][v1]
+            f2 = game_state["fortresses"][v2]
+            f3 = game_state["fortresses"][v3]
             
-            if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'): continue
+            if f1.get('disabled') or f2.get('disabled') or f3.get('disabled'):
+                continue
             
             if not f1['owner'] and not f2['owner'] and not f3['owner']:
                 ai_color = RACES["Orc"]["color"]
                 game_state["face_colors"][i] = world_engine.darken_color(ai_color, factor=0.4)
                 
+                print(f"[DEBUG] Spawning NPC {AI_NAME} (Color: GREEN) at Sector {i}")
+                
                 units_per_base = STARTING_UNITS_POOL // 3
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
-                        "owner": AI_NAME, "units": units_per_base, "race": "Orc",
-                        "is_capital": True, "special_active": True, "tier": 1, "paths": [],
+                        "owner": AI_NAME,
+                        "units": units_per_base,
+                        "race": "Orc",
+                        "is_capital": True,
+                        "special_active": True,
+                        "tier": 1,
+                        "paths": [],
                         "type": "Keep"
                     })
                 game_state["sector_owners"][str(i)] = AI_NAME
@@ -300,38 +357,47 @@ def create_app():
     @socketio.on('submit_move')
     @login_required
     def handle_move(data):
-        src_id = str(data.get('source')); tgt_id = str(data.get('target'))
-        if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]: return
+        src_id = str(data.get('source'))
+        tgt_id = str(data.get('target'))
+        if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]:
+            return
         src_fort = game_state["fortresses"][src_id]
-        if src_fort['owner'] != current_user.username: return
-        if src_fort.get('disabled'): return
+        if src_fort['owner'] != current_user.username:
+            return
+        if src_fort.get('disabled'):
+            return
         
-        # Check adjacency using the logic stored in game state
-        if int(tgt_id) not in game_state["adj"].get(int(src_id), []): return
+        if int(tgt_id) not in game_state["adj"].get(int(src_id), []):
+            return
 
-        if tgt_id in src_fort['paths']: src_fort['paths'].remove(tgt_id)
+        print(f"[DEBUG] Move Order: {current_user.username} from {src_id} to {tgt_id}")
+
+        if tgt_id in src_fort['paths']:
+            src_fort['paths'].remove(tgt_id)
         else:
-            if len(src_fort['paths']) < src_fort['tier']: src_fort['paths'].append(tgt_id)
+            if len(src_fort['paths']) < src_fort['tier']:
+                src_fort['paths'].append(tgt_id)
         
         emit('update_map', game_state["fortresses"], broadcast=True)
 
     @socketio.on('specialize_fortress')
     @login_required
     def handle_specialize(data):
-        """Allows players to change the fortress type if terrain permits."""
         fid = str(data.get('id'))
         new_type = data.get('type')
         
-        if fid not in game_state["fortresses"]: return
+        if fid not in game_state["fortresses"]:
+            return
         fort = game_state["fortresses"][fid]
         
-        if fort['owner'] != current_user.username: return
+        if fort['owner'] != current_user.username:
+            return
         
-        # Check terrain validity
         land_type = fort.get('land_type', 'Plain')
         allowed = TERRAIN_BUILD_OPTIONS.get(land_type, TERRAIN_BUILD_OPTIONS['Default'])
         
         if new_type in allowed and new_type in FORTRESS_TYPES:
+            print(f"[DEBUG] Specializing {fid} to {new_type}")
             fort['type'] = new_type
             emit('update_map', game_state["fortresses"], broadcast=True)
 
