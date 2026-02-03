@@ -1,10 +1,9 @@
 export class GameClient {
     constructor(callbacks) {
-        // callbacks: { onInit, onMapUpdate, onColorUpdate, onFocus }
         this.socket = io();
         this.callbacks = callbacks;
+        this.isLocked = true;
         
-        // CORRECTION: ID matches index.html "username-store"
         this.username = document.getElementById('username-store').innerText; 
         this.gameState = {
             fortresses: {},
@@ -19,31 +18,44 @@ export class GameClient {
 
     initSocket() {
         this.socket.on('connect', () => {
-            console.log("Connected via Socket.IO");
-            // Request initial state
             fetch('/api/gamestate')
                 .then(r => {
-                    if (!r.ok) throw new Error("API Error: " + r.statusText);
+                    if (!r.ok) {
+                        throw new Error("API Error: " + r.statusText);
+                    }
                     return r.json();
                 })
                 .then(data => {
                     this.gameState = data;
-                    if (this.callbacks.onInit) this.callbacks.onInit(data);
+                    if (this.callbacks.onInit) {
+                        this.callbacks.onInit(data);
+                    }
+                    if (this.callbacks.onStartSequence) {
+                        this.callbacks.onStartSequence(() => {
+                            this.isLocked = false;
+                        });
+                    }
                 })
                 .catch(err => console.error("Failed to load game state:", err));
         });
 
         this.socket.on('update_map', (fortresses) => {
             this.gameState.fortresses = fortresses;
-            if (this.callbacks.onMapUpdate) this.callbacks.onMapUpdate(fortresses);
+            if (this.callbacks.onMapUpdate) {
+                this.callbacks.onMapUpdate(fortresses);
+            }
         });
 
         this.socket.on('update_face_colors', (colors) => {
-            if (this.callbacks.onColorUpdate) this.callbacks.onColorUpdate(colors);
+            if (this.callbacks.onColorUpdate) {
+                this.callbacks.onColorUpdate(colors);
+            }
         });
         
         this.socket.on('focus_camera', (data) => {
-             if (this.callbacks.onFocus) this.callbacks.onFocus(data.position);
+             if (this.callbacks.onFocus) {
+                this.callbacks.onFocus(data.position);
+             }
         });
     }
 
@@ -53,15 +65,23 @@ export class GameClient {
     
     getValidStructures(terrainType) {
         const options = this.gameState.terrain_build_options;
-        if (!options) return ["Keep"];
+        if (!options) {
+            return ["Keep"];
+        }
         return options[terrainType] || options["Default"] || ["Keep"];
     }
 
     specializeFortress(id, typeName) {
+        if (this.isLocked) {
+            return;
+        }
         this.socket.emit('specialize_fortress', { id: id, type: typeName });
     }
 
     sendMove(sourceId, targetId) {
+        if (this.isLocked) {
+            return;
+        }
         this.socket.emit('submit_move', { source: sourceId, target: targetId });
     }
     

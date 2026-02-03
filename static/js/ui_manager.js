@@ -1,6 +1,6 @@
 export class UIManager {
     constructor(gameClient) {
-        this.infoPanel = document.getElementById('game-ui'); // Using the HUD defined in index.html
+        this.infoPanel = document.getElementById('game-ui');
         this.client = gameClient;
     }
 
@@ -8,8 +8,43 @@ export class UIManager {
         this.client = client;
     }
 
+    startCountdown(callback) {
+        const overlay = document.createElement('div');
+        overlay.id = "start-countdown";
+        overlay.style.position = "absolute";
+        overlay.style.top = "20%";
+        overlay.style.left = "50%";
+        overlay.style.transform = "translateX(-50%)";
+        overlay.style.fontSize = "120px";
+        overlay.style.color = "#ff0000";
+        overlay.style.fontFamily = "'Courier New', Courier, monospace";
+        overlay.style.fontWeight = "bold";
+        overlay.style.zIndex = "1000";
+        overlay.style.textShadow = "2px 2px #000";
+        document.body.appendChild(overlay);
+
+        let count = 3;
+        const timer = setInterval(() => {
+            if (count > 0) {
+                overlay.innerText = count;
+            } else if (count === 0) {
+                overlay.innerText = "GO!";
+                overlay.style.color = "#00ff00";
+            } else {
+                clearInterval(timer);
+                overlay.remove();
+                if (callback) {
+                    callback();
+                }
+            }
+            count--;
+        }, 1000);
+    }
+
     showFortressInfo(fort) {
-        if (!this.infoPanel) return;
+        if (!this.infoPanel) {
+            return;
+        }
         
         this.infoPanel.style.display = 'block';
         
@@ -20,27 +55,24 @@ export class UIManager {
         document.getElementById('ui-tier').innerText = fort.tier;
         document.getElementById('ui-special').innerText = fort.special_active ? "Active" : "Inactive";
         
-        // Dynamic Action Area
         const actionArea = document.getElementById('action-area');
-        if (actionArea) actionArea.style.display = 'block';
+        if (actionArea) {
+            actionArea.style.display = 'block';
+        }
 
-        // Check if we need to add the specialization dropdown
         let specContainer = document.getElementById('spec-container');
         if (!specContainer) {
             specContainer = document.createElement('div');
             specContainer.id = 'spec-container';
             specContainer.style.marginTop = '10px';
             specContainer.className = 'stat-row';
-            // Insert before action area or inside
             const slider = document.getElementById('slider-container');
             slider.parentNode.insertBefore(specContainer, slider);
         }
 
         if (fort.owner === this.client.username) {
-            // Build Dropdown for specialization
             let html = `<label class="stat-label">Build:</label> <select id="spec-select" style="background:#333;color:#fff;border:1px solid #555;">`;
             
-            // Get valid options from client (which got them from API)
             const terrain = fort.land_type || 'Default';
             const options = this.client.getValidStructures(terrain);
             
@@ -51,7 +83,6 @@ export class UIManager {
             html += `</select>`;
             specContainer.innerHTML = html;
 
-            // Add Event Listener
             const select = document.getElementById('spec-select');
             select.onchange = (e) => {
                 this.client.specializeFortress(fort.id, e.target.value);
@@ -63,14 +94,10 @@ export class UIManager {
     }
 
     hideFortressInfo() {
-        // We might not want to hide it completely, just clear data, but based on prev code:
-        // this.infoPanel.style.display = 'none'; 
-        // Actually, let's keep it visible but maybe clear selection if strictly needed.
-        // For now, doing nothing allows the last selected to remain visible, which is common.
+        // Implementation for clearing UI state if required
     }
 
     highlightSelection(id, isActive) {
-        // Updates UI border or similar if needed
         const btn = document.getElementById('btn-action');
         if (btn) {
             btn.innerText = isActive ? "SELECT TARGET" : "SELECT SOURCE";

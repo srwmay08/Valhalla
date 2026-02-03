@@ -13,10 +13,9 @@ export class GameRenderer {
         this.fortressMeshes = {};
         this.pathLines = {}; 
         
-        // Phase 4: Packet Visualization
         this.packetMesh = null;
-        this.dummy = new THREE.Object3D(); // Helper for matrix calculation
-        this.vertices = []; // Store vertices for lerping
+        this.dummy = new THREE.Object3D();
+        this.vertices = [];
 
         this.init();
     }
@@ -25,26 +24,23 @@ export class GameRenderer {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.container.appendChild(this.renderer.domElement);
         
-        // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
+        
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(10, 10, 10);
         this.scene.add(dirLight);
 
-        // Camera
         this.camera.position.z = 2.5;
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
-        // Initialize InstancedMesh for Packets (Pool size 2000)
-        const geometry = new THREE.SphereGeometry(0.012, 8, 8);
-        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        this.packetMesh = new THREE.InstancedMesh(geometry, material, 2000);
+        const geometry = new THREE.SphereGeometry(0.008, 6, 6);
+        const material = new THREE.MeshLambertMaterial({ vertexColors: false });
+        this.packetMesh = new THREE.InstancedMesh(geometry, material, 4000);
         this.packetMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.scene.add(this.packetMesh);
 
-        // Resize Listener
         window.addEventListener('resize', () => this.onWindowResize(), false);
     }
 
@@ -55,10 +51,11 @@ export class GameRenderer {
     }
 
     initWorld(vertices, faces, faceColors) {
-        // Store vertices for packet interpolation
         this.vertices = vertices;
 
-        if (this.sphereMesh) this.scene.remove(this.sphereMesh);
+        if (this.sphereMesh) {
+            this.scene.remove(this.sphereMesh);
+        }
 
         const geometry = new THREE.BufferGeometry();
         const positions = [];
@@ -95,21 +92,35 @@ export class GameRenderer {
     }
 
     initFortressVisuals(vertices) {
-        const geom = new THREE.SphereGeometry(0.04, 16, 16);
-        
         vertices.forEach((v, idx) => {
-            const mat = new THREE.MeshBasicMaterial({ color: 0x888888 }); 
-            const mesh = new THREE.Mesh(geom, mat);
-            mesh.position.set(v[0], v[1], v[2]);
-            mesh.userData = { type: 'fortress', id: idx };
+            const group = new THREE.Group();
             
-            this.scene.add(mesh);
-            this.fortressMeshes[idx] = mesh;
+            const baseGeom = new THREE.CylinderGeometry(0.035, 0.045, 0.02, 6);
+            const baseMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const base = new THREE.Mesh(baseGeom, baseMat);
+            group.add(base);
+
+            const roofGeom = new THREE.ConeGeometry(0.05, 0.02, 6);
+            const roofMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+            const roof = new THREE.Mesh(roofGeom, roofMat);
+            roof.position.y = 0.02;
+            group.add(roof);
+
+            group.position.set(v[0], v[1], v[2]);
+            
+            const normal = new THREE.Vector3(v[0], v[1], v[2]).normalize();
+            group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+            
+            group.userData = { type: 'fortress', id: idx };
+            this.scene.add(group);
+            this.fortressMeshes[idx] = group;
         });
     }
 
     updateFaceColors(faceColors) {
-        if (!this.sphereMesh) return;
+        if (!this.sphereMesh) {
+            return;
+        }
         
         const colors = this.sphereMesh.geometry.attributes.color.array;
         
@@ -133,25 +144,34 @@ export class GameRenderer {
 
     updateFortresses(fortressData, currentUsername) {
         Object.values(fortressData).forEach(fort => {
-            const mesh = this.fortressMeshes[fort.id];
-            if (!mesh) return;
+            const group = this.fortressMeshes[fort.id];
+            if (!group) {
+                return;
+            }
 
             let color = 0x888888; 
             if (fort.owner) {
-                if (fort.owner === currentUsername) color = 0x00ff00; 
-                else if (fort.owner === 'Gorgon') color = 0xff0000; 
-                else color = 0x0000ff; 
+                if (fort.owner === currentUsername) {
+                    color = 0xff0000;
+                } else if (fort.owner === 'Gorgon') {
+                    color = 0x00ff00;
+                } else if (fort.owner === 'Midas') {
+                    color = 0xffff00;
+                } else {
+                    color = 0x0000ff;
+                }
             }
-            mesh.material.color.setHex(color);
-
-            const scale = 1 + (fort.tier - 1) * 0.3;
-            mesh.scale.set(scale, scale, scale);
             
-            this.updatePathVisuals(fort);
+            group.children[1].material.color.setHex(color);
+
+            const scale = 1 + (fort.tier - 1) * 0.4;
+            group.scale.set(scale, scale, scale);
+            
+            this.updatePathVisuals(fort, color);
         });
     }
 
-    updatePathVisuals(fort) {
+    updatePathVisuals(fort, teamColor) {
         const keyPrefix = `path_${fort.id}_`;
         
         for (const key in this.pathLines) {
@@ -161,19 +181,28 @@ export class GameRenderer {
             }
         }
 
-        if (!fort.paths || fort.paths.length === 0) return;
+        if (!fort.paths || fort.paths.length === 0) {
+            return;
+        }
 
-        const startMesh = this.fortressMeshes[fort.id];
+        const startPos = this.fortressMeshes[fort.id].position;
         fort.paths.forEach(targetId => {
             const targetMesh = this.fortressMeshes[targetId];
-            if (!startMesh || !targetMesh) return;
+            if (!targetMesh) {
+                return;
+            }
 
             const points = [];
-            points.push(startMesh.position);
+            points.push(startPos);
             points.push(targetMesh.position);
 
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 });
+            const material = new THREE.LineBasicMaterial({ 
+                color: teamColor || 0xffaa00, 
+                linewidth: 3,
+                transparent: true,
+                opacity: 0.6
+            });
             const line = new THREE.Line(geometry, material);
             
             const key = `${keyPrefix}${targetId}`;
@@ -183,63 +212,87 @@ export class GameRenderer {
     }
 
     updatePackets(edgeData) {
-        // Phase 4: Render moving unit packets using InstancedMesh
-        if (!this.packetMesh || !this.vertices.length) return;
+        if (!this.packetMesh || !this.vertices.length) {
+            return;
+        }
 
         let instanceIdx = 0;
-        const limit = 2000;
+        const limit = 4000;
 
         Object.values(edgeData).forEach(edge => {
-            if (!edge.packets || edge.packets.length === 0) return;
+            if (!edge.packets || edge.packets.length === 0) {
+                return;
+            }
 
-            // Get start/end coordinates from vertex array
             const uCoords = this.vertices[edge.u];
             const vCoords = this.vertices[edge.v];
-            
             const startVec = new THREE.Vector3(uCoords[0], uCoords[1], uCoords[2]);
             const endVec = new THREE.Vector3(vCoords[0], vCoords[1], vCoords[2]);
 
             edge.packets.forEach(packet => {
-                if (instanceIdx >= limit) return;
+                if (instanceIdx >= limit) {
+                    return;
+                }
 
-                // Lerp Position based on packet.pos (0.0 to 1.0)
-                // packet.pos is absolute relative to edge direction? 
-                // The edge stores U and V. Packet direction 1 means U->V, -1 means V->U.
-                // However, world_engine updates packet.pos relative to U->V vector (0.0=U, 1.0=V).
-                // So simple lerp works.
+                const troopCount = Math.min(5, Math.ceil(packet.amount / 5)); 
                 
-                const currentPos = new THREE.Vector3().lerpVectors(startVec, endVec, packet.pos);
-                
-                this.dummy.position.copy(currentPos);
-                
-                // Visual scale based on amount
-                const s = Math.min(3.0, 1.0 + (packet.amount / 50.0)); 
-                this.dummy.scale.set(s, s, s);
-                
-                this.dummy.updateMatrix();
-                this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
-                
-                instanceIdx++;
+                for (let i = 0; i < troopCount; i++) {
+                    if (instanceIdx >= limit) {
+                        break;
+                    }
+
+                    const offset = (i * 0.02) * packet.direction;
+                    const displayPos = Math.max(0, Math.min(1, packet.pos - offset));
+                    
+                    const currentPos = new THREE.Vector3().lerpVectors(startVec, endVec, displayPos);
+                    
+                    this.dummy.position.copy(currentPos);
+                    
+                    const s = packet.is_special ? 1.5 : 1.0;
+                    this.dummy.scale.set(s, s, s);
+                    
+                    this.dummy.updateMatrix();
+                    this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
+                    
+                    let pColor = new THREE.Color(0xffffff);
+                    if (packet.owner === 'Gorgon') {
+                        pColor.setHex(0x00ff00);
+                    } else {
+                        pColor.setHex(0xff0000);
+                    }
+
+                    this.packetMesh.setColorAt(instanceIdx, pColor);
+                    
+                    instanceIdx++;
+                }
             });
         });
 
-        // Hide unused instances by zeroing scale
         const zeroMatrix = new THREE.Matrix4().set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
         for (let i = instanceIdx; i < limit; i++) {
             this.packetMesh.setMatrixAt(i, zeroMatrix);
         }
 
         this.packetMesh.instanceMatrix.needsUpdate = true;
+        if (this.packetMesh.instanceColor) {
+            this.packetMesh.instanceColor.needsUpdate = true;
+        }
     }
 
     focusCamera(pos) {
         const target = new THREE.Vector3(pos[0], pos[1], pos[2]);
-        this.camera.position.copy(target.multiplyScalar(2.0)); 
+        this.camera.position.copy(target.clone().multiplyScalar(2.0)); 
         this.camera.lookAt(0, 0, 0);
+        if (this.controls) {
+            this.controls.target.set(0, 0, 0);
+            this.controls.update();
+        }
     }
 
     render() {
-        if (this.controls) this.controls.update();
+        if (this.controls) {
+            this.controls.update();
+        }
         this.renderer.render(this.scene, this.camera);
     }
 }
