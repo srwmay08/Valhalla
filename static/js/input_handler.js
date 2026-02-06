@@ -31,24 +31,29 @@ export class InputHandler {
         let hoverType = "Background";
 
         if (intersects.length > 0) {
-            const hit = intersects[0];
-            
-            // Priority 1: Fortress
+            // Priority selection in the hover list
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
+            const pathHit = intersects.find(h => h.object.userData?.type === 'path');
+            const worldHit = intersects.find(h => h.object.userData?.type === 'world');
+
             if (fortHit) {
                 hoverId = fortHit.object.parent.userData.id;
                 hoverType = "Fortress";
-            } 
-            // Priority 2: Road
-            else if (hit.object.userData?.type === 'path') {
-                hoverId = hit.object.userData.pathId;
+                this.renderer.clearHoverHighlight();
+                this.renderer.highlightFortressHover(hoverId);
+            } else if (pathHit) {
+                hoverId = pathHit.object.userData.pathId;
                 hoverType = "Road";
-            }
-            // Priority 3: World Face
-            else if (hit.object.userData?.type === 'world') {
-                hoverId = hit.faceIndex;
+                this.renderer.clearHoverHighlight();
+                this.renderer.highlightPathHover(hoverId);
+            } else if (worldHit) {
+                hoverId = worldHit.faceIndex;
                 hoverType = "Face";
+                this.renderer.clearHoverHighlight();
+                this.renderer.highlightFaceHover(hoverId);
             }
+        } else {
+            this.renderer.clearHoverHighlight();
         }
 
         this.ui.updateHoverMonitor(hoverType, hoverId);
@@ -98,6 +103,7 @@ export class InputHandler {
         if (!fort) return;
 
         this.ui.showFortressInfo(fort);
+        this.renderer.clearSelectionHighlights();
 
         if (this.selectedSourceId === null) {
             if (fort.owner === this.client.username) {

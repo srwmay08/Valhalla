@@ -17,11 +17,15 @@ export class GameRenderer {
         this.dummy = new THREE.Object3D();
         this.vertices = [];
 
+        // State Tracking
+        this.currentSelectedFace = null;
+        this.currentHoveredFace = null;
+        this.baseFaceColors = []; // Store original colors to prevent permanent lightening
+
         this.init();
     }
 
     init() {
-        console.log("[RENDERER] Initializing WebGL Scene...");
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.container.appendChild(this.renderer.domElement);
         
@@ -32,7 +36,7 @@ export class GameRenderer {
         dirLight.position.set(10, 10, 10);
         this.scene.add(dirLight);
 
-        this.camera.position.z = 2.5;
+        this.camera.position.set(0, 0, 2.5);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
@@ -53,6 +57,7 @@ export class GameRenderer {
 
     initWorld(vertices, faces, faceColors) {
         this.vertices = vertices;
+        this.baseFaceColors = [...faceColors]; // Backup original state
         if (this.sphereMesh) this.scene.remove(this.sphereMesh);
 
         const geometry = new THREE.BufferGeometry();
@@ -64,6 +69,7 @@ export class GameRenderer {
             const vB = vertices[face[1]];
             const vC = vertices[face[2]];
             positions.push(...vA, ...vB, ...vC);
+
             const color = new THREE.Color(faceColors[faceIdx]);
             for(let i=0; i<3; i++) colors.push(color.r, color.g, color.b);
         });
@@ -72,7 +78,8 @@ export class GameRenderer {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
 
-        this.sphereMesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+        const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+        this.sphereMesh = new THREE.Mesh(geometry, material);
         this.sphereMesh.userData = { type: 'world' }; 
         this.scene.add(this.sphereMesh);
 
@@ -95,24 +102,60 @@ export class GameRenderer {
         });
     }
 
+    highlightFortressHover(id) {
+        if (this.fortressMeshes[id]) {
+            // Roof is index 1 in children
+            this.fortressMeshes[id].children[1].material.emissive.setHex(0x444400);
+        }
+    }
+
+    highlightPathHover(pathId) {
+        const line = this.pathLines[pathId];
+        if (line) {
+            line.material.opacity = 1.0;
+            line.material.color.setHex(0xffffff); // White highlight for hover
+        }
+    }
+
+    highlightFaceHover(faceIdx) {
+        this.currentHoveredFace = faceIdx;
+    }
+
     highlightFaceSelection(faceIdx) {
-        // Temporary logic to lighten the clicked face
-        const colors = this.sphereMesh.geometry.attributes.color.array;
-        const base = faceIdx * 9;
-        for(let i=0; i<9; i++) colors[base + i] *= 1.5;
-        this.sphereMesh.geometry.attributes.color.needsUpdate = true;
+        this.currentSelectedFace = faceIdx;
+    }
+
+    clearHoverHighlight() {
+        // Reset fortress emissives
+        Object.values(this.fortressMeshes).forEach(g => g.children[1].material.emissive.setHex(0));
+        
+        // Reset all path opacities to base (visual reset handled in updatePathVisuals)
+        Object.values(this.pathLines).forEach(l => {
+            l.material.opacity = 0.6;
+        });
+
+        this.currentHoveredFace = null;
     }
 
     clearSelectionHighlights() {
-        // Redraw based on current state to reset visual tweaks
-        // Logic would call updateFaceColors with original data
+        this.currentSelectedFace = null;
     }
 
     updateFaceColors(faceColors) {
         if (!this.sphereMesh) return;
+        this.baseFaceColors = [...faceColors]; // Sync current server state
+        
         const colors = this.sphereMesh.geometry.attributes.color.array;
         faceColors.forEach((colorHex, i) => {
-            const color = new THREE.Color(colorHex);
+            let color = new THREE.Color(colorHex);
+            
+            // Selection has priority
+            if (i === this.currentSelectedFace) {
+                color.offsetHSL(0, 0, 0.3);
+            } else if (i === this.currentHoveredFace) {
+                color.offsetHSL(0, 0, 0.15);
+            }
+            
             const base = i * 9;
             for(let j=0; j<3; j++) {
                 colors[base + j*3] = color.r;
@@ -159,13 +202,17 @@ export class GameRenderer {
             const targetMesh = this.fortressMeshes[targetId];
             if (!targetMesh) return;
 
-            const line = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([startPos, targetMesh.position]), 
-                new THREE.LineBasicMaterial({ color: teamColor, transparent: true, opacity: 0.8 })
-            );
+            // Use LineBasicMaterial - fixed: no emissive property here
+            const material = new THREE.LineBasicMaterial({ 
+                color: teamColor, 
+                transparent: true, 
+                opacity: 0.6 
+            });
+
+            const geometry = new THREE.BufferGeometry().setFromPoints([startPos, targetMesh.position]);
+            const line = new THREE.Line(geometry, material);
             
             const key = `${keyPrefix}${targetId}`;
-            // ROAD METADATA for monitoring/clicking
             line.userData = { type: 'path', pathId: key };
             
             this.scene.add(line);

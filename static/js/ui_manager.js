@@ -6,42 +6,43 @@ export class UIManager {
     }
 
     initMonitor() {
-        // Create small overlay for ID monitoring
         this.monitor = document.createElement('div');
-        this.monitor.style = "position:absolute; bottom:10px; right:10px; background:rgba(0,0,0,0.7); color:white; padding:5px; font-family:monospace; pointer-events:none; font-size:12px;";
+        this.monitor.id = "hover-monitor";
+        this.monitor.style = "position:absolute; bottom:20px; right:20px; background:rgba(0,0,0,0.8); color:#00ff00; padding:10px; font-family:monospace; pointer-events:none; font-size:14px; border:1px solid #00ff00; border-radius:4px; z-index:1000;";
         document.body.appendChild(this.monitor);
     }
 
     updateHoverMonitor(type, id) {
-        this.monitor.innerHTML = `TYPE: ${type}<br>ID: ${id}`;
+        this.monitor.innerHTML = `[TARGETING SYSTEM]<br>TYPE: ${type}<br>IDENT: ${id}`;
     }
 
     showFaceInfo(faceIdx) {
         if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
-        document.getElementById('ui-land').innerText = "Province Area";
-        document.getElementById('ui-type').innerText = "Land Face";
-        document.getElementById('ui-owner').innerText = this.client.gameState.sector_owners?.[faceIdx] || "Wilderness";
-        document.getElementById('ui-units').innerText = "---";
-        document.getElementById('ui-tier').innerText = "---";
-        document.getElementById('ui-special').innerText = "Sector ID: " + faceIdx;
+        const owner = this.client.gameState.sector_owners?.[faceIdx] || "Unclaimed";
+
+        document.getElementById('ui-land').innerText = "Province Face";
+        document.getElementById('ui-type').innerText = "Land Geometry";
+        document.getElementById('ui-owner').innerText = owner;
+        document.getElementById('ui-units').innerText = "N/A";
+        document.getElementById('ui-tier').innerText = "N/A";
+        document.getElementById('ui-special').innerText = "Face Index: " + faceIdx;
         
         document.getElementById('action-area').style.display = 'none';
-        if (document.getElementById('spec-container')) document.getElementById('spec-container').innerHTML = '';
     }
 
     showPathInfo(source, target) {
         if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
-        document.getElementById('ui-land').innerText = "Supply Line";
-        document.getElementById('ui-type').innerText = "Active Road";
-        document.getElementById('ui-owner').innerText = `From Node ${source} to ${target}`;
-        document.getElementById('ui-units').innerText = "Flowing";
-        document.getElementById('ui-tier').innerText = "N/A";
-        document.getElementById('ui-special').innerText = "Pathing Active";
         
+        document.getElementById('ui-land').innerText = "Active Supply Road";
+        document.getElementById('ui-type').innerText = "Trade Route";
+        document.getElementById('ui-owner').innerText = `Origin: ${source} → Dest: ${target}`;
+        document.getElementById('ui-units').innerText = "Continuous Flow";
+        document.getElementById('ui-tier').innerText = "Standard";
+        document.getElementById('ui-special').innerText = "Pathing ID: " + source + "_" + target;
+
         document.getElementById('action-area').style.display = 'none';
-        if (document.getElementById('spec-container')) document.getElementById('spec-container').innerHTML = '';
     }
 
     showFortressInfo(fort) {
@@ -62,12 +63,11 @@ export class UIManager {
             specContainer = document.createElement('div');
             specContainer.id = 'spec-container';
             specContainer.style.marginTop = '10px';
-            specContainer.className = 'stat-row';
             document.getElementById('slider-container').parentNode.insertBefore(specContainer, document.getElementById('slider-container'));
         }
 
         if (fort.owner === this.client.username) {
-            let html = `<label class="stat-label">Build:</label> <select id="spec-select" style="background:#333;color:#fff;border:1px solid #555;">`;
+            let html = `<label class="stat-label">Build:</label> <select id="spec-select" style="background:#333;color:#fff;">`;
             this.client.getValidStructures(fort.land_type || 'Default').forEach(opt => {
                 html += `<option value="${opt}" ${opt === fort.type ? 'selected' : ''}>${opt}</option>`;
             });
