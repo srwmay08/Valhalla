@@ -7,11 +7,13 @@ export class InputHandler {
         this.ui = uiManager;
         
         this.raycaster = new THREE.Raycaster();
+        // Set threshold for line detection (world units)
+        this.raycaster.params.Line.threshold = 0.02; 
         this.mouse = new THREE.Vector2();
         
         this.selectedSourceId = null;
         this.hoveredObject = null;
-        this.hoveredType = null; // 'fortress' or 'face'
+        this.hoveredType = null; // 'fortress', 'face', or 'path'
         
         this.initListeners();
     }
@@ -35,24 +37,28 @@ export class InputHandler {
         let currentType = null;
 
         if (intersects.length > 0) {
-            const hit = intersects[0];
+            // Priority 1: Fortress
+            const fortHit = intersects.find(hit => hit.object.parent && hit.object.parent.userData && hit.object.parent.userData.type === 'fortress');
             
-            // Check for Fortress Hover (check parent since fortresses are Groups)
-            const fortGroup = hit.object.parent;
-            if (fortGroup && fortGroup.userData && fortGroup.userData.type === 'fortress') {
-                currentHover = fortGroup.userData.id;
+            // Priority 2: Path/Road
+            const pathHit = intersects.find(hit => hit.object.userData && hit.object.userData.type === 'path');
+            
+            // Priority 3: World Face
+            const worldHit = intersects.find(hit => hit.object.userData && hit.object.userData.type === 'world');
+
+            if (fortHit) {
+                currentHover = fortHit.object.parent.userData.id;
                 currentType = 'fortress';
-            } 
-            // Check for World/Face Hover
-            else if (hit.object.userData && hit.object.userData.type === 'world') {
-                // Each face in BufferGeometry is 3 vertices. 
-                // In our sphereMesh, each logical face consists of 1 triangle.
-                currentHover = hit.faceIndex;
+            } else if (pathHit) {
+                currentHover = pathHit.object.userData.pathId;
+                currentType = 'path';
+            } else if (worldHit) {
+                currentHover = worldHit.faceIndex;
                 currentType = 'face';
             }
         }
 
-        // Apply visual highlighting if the hover changed
+        // Update visual highlighting
         if (this.hoveredObject !== currentHover || this.hoveredType !== currentType) {
             this.renderer.clearHoverHighlight();
             this.hoveredObject = currentHover;
@@ -60,6 +66,8 @@ export class InputHandler {
 
             if (this.hoveredType === 'fortress') {
                 this.renderer.highlightFortressHover(this.hoveredObject);
+            } else if (this.hoveredType === 'path') {
+                this.renderer.highlightPathHover(this.hoveredObject);
             } else if (this.hoveredType === 'face') {
                 this.renderer.highlightFaceHover(this.hoveredObject);
             }
@@ -71,19 +79,16 @@ export class InputHandler {
         const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
 
         if (intersects.length > 0) {
-            const hit = intersects[0];
-            
-            // 1. Check for Fortress Click
-            const fortGroup = hit.object.parent;
-            if (fortGroup && fortGroup.userData && fortGroup.userData.type === 'fortress') {
-                this.handleFortressClick(fortGroup.userData.id);
-                return;
-            }
+            const fortHit = intersects.find(hit => hit.object.parent && hit.object.parent.userData && hit.object.parent.userData.type === 'fortress');
+            const pathHit = intersects.find(hit => hit.object.userData && hit.object.userData.type === 'path');
+            const worldHit = intersects.find(hit => hit.object.userData && hit.object.userData.type === 'world');
 
-            // 2. Check for World/Face Click
-            if (hit.object.userData && hit.object.userData.type === 'world') {
-                this.handleFaceClick(hit.faceIndex);
-                return;
+            if (fortHit) {
+                this.handleFortressClick(fortHit.object.parent.userData.id);
+            } else if (pathHit) {
+                this.handlePathClick(pathHit.object.userData.pathId);
+            } else if (worldHit) {
+                this.handleFaceClick(worldHit.faceIndex);
             }
         } else {
             this.deselect();
@@ -91,40 +96,41 @@ export class InputHandler {
     }
 
     handleFaceClick(faceIdx) {
-        // Note: faceIdx is the Three.js face index. 
-        // In renderer.js, faces are built linearly.
         this.ui.showFaceInfo(faceIdx);
         this.renderer.setFaceSelection(faceIdx);
-        // Clear fortress selection when clicking land
         if (this.selectedSourceId !== null) {
             this.ui.highlightSelection(this.selectedSourceId, false);
             this.selectedSourceId = null;
         }
     }
 
+    handlePathClick(pathId) {
+        console.log(`Path Clicked: ${pathId}`);
+        // Split pathId (e.g., "path_5_12") back into source and target
+        const parts = pathId.split('_');
+        const sourceId = parseInt(parts[1]);
+        const targetId = parseInt(parts[2]);
+        
+        // Open UI or toggle path logic
+        this.ui.showPathInfo(sourceId, targetId);
+    }
+
     handleFortressClick(id) {
         const fort = this.client.getFortress(id);
         if (!fort) return;
 
-        // UI Update
         this.ui.showFortressInfo(fort);
-        this.renderer.setFaceSelection(null); // Clear face selection highlight
+        this.renderer.setFaceSelection(null);
 
-        // Logic: Source Selection vs Target Selection
         if (this.selectedSourceId === null) {
-            // Select Source if owned by player
             if (fort.owner === this.client.username) {
                 this.selectedSourceId = id;
                 this.ui.highlightSelection(id, true);
-                console.log(`Selected Source: ${id}`);
             }
         } else {
-            // We already have a source, this click is the Target
             if (this.selectedSourceId == id) {
-                // Clicked same fort -> Deselect
                 this.deselect();
             } else {
-                // Submit Move
                 this.client.sendMove(this.selectedSourceId, id);
             }
         }

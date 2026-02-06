@@ -17,7 +17,6 @@ export class GameRenderer {
         this.dummy = new THREE.Object3D();
         this.vertices = [];
 
-        // Track highlights
         this.currentSelectedFace = null;
 
         this.init();
@@ -128,8 +127,15 @@ export class GameRenderer {
     highlightFortressHover(id) {
         const group = this.fortressMeshes[id];
         if (group) {
-            // Emissive highlight on the roof
-            group.children[1].material.emissive = new THREE.Color(0x333300);
+            group.children[1].material.emissive = new THREE.Color(0x444400);
+        }
+    }
+
+    highlightPathHover(pathId) {
+        const line = this.pathLines[pathId];
+        if (line) {
+            line.material.opacity = 1.0;
+            line.material.emissive = new THREE.Color(0xffffff);
         }
     }
 
@@ -137,44 +143,37 @@ export class GameRenderer {
         if (!this.sphereMesh) return;
         const colors = this.sphereMesh.geometry.attributes.color.array;
         const base = faceIdx * 9;
-        // Brighten the vertices slightly for hover
-        for(let i=0; i<9; i++) {
-            colors[base + i] *= 1.5;
+        for (let i = 0; i < 9; i++) {
+            colors[base + i] *= 1.4;
         }
         this.sphereMesh.geometry.attributes.color.needsUpdate = true;
     }
 
     setFaceSelection(faceIdx) {
-        // This would ideally use a separate selection mesh or vertex colors
-        // For now, we clear the hover which resets colors via the next update loop
         this.currentSelectedFace = faceIdx;
     }
 
     clearHoverHighlight() {
-        // Reset fortress emissive
         Object.values(this.fortressMeshes).forEach(group => {
             group.children[1].material.emissive = new THREE.Color(0x000000);
         });
-        // Face highlights are naturally reset during the next updateFaceColors call
+        Object.values(this.pathLines).forEach(line => {
+            line.material.opacity = 0.6;
+            if (line.material.emissive) {
+                line.material.emissive = new THREE.Color(0x000000);
+            }
+        });
     }
 
     updateFaceColors(faceColors) {
-        if (!this.sphereMesh) {
-            return;
-        }
-        
+        if (!this.sphereMesh) return;
         const colors = this.sphereMesh.geometry.attributes.color.array;
-        
         faceColors.forEach((colorHex, i) => {
             let color = new THREE.Color(colorHex);
-            
-            // If this face is selected, make it pop
             if (this.currentSelectedFace !== null && i === this.currentSelectedFace) {
-                color.offsetHSL(0, 0, 0.2);
+                color.offsetHSL(0, 0, 0.25);
             }
-
             const baseIndex = i * 9;
-            
             colors[baseIndex] = color.r;
             colors[baseIndex+1] = color.g;
             colors[baseIndex+2] = color.b;
@@ -185,21 +184,18 @@ export class GameRenderer {
             colors[baseIndex+7] = color.g;
             colors[baseIndex+8] = color.b;
         });
-        
         this.sphereMesh.geometry.attributes.color.needsUpdate = true;
     }
 
     updateFortresses(fortressData, currentUsername) {
         Object.values(fortressData).forEach(fort => {
             const group = this.fortressMeshes[fort.id];
-            if (!group) {
-                return;
-            }
+            if (!group) return;
 
             let color = 0x888888; 
             if (fort.owner) {
                 if (fort.owner === currentUsername) {
-                    color = 0xff0000; // Red for Player
+                    color = 0xff0000;
                 } else if (fort.owner.includes('Green')) {
                     color = 0x00ff00;
                 } else if (fort.owner.includes('Yellow')) {
@@ -210,7 +206,6 @@ export class GameRenderer {
             }
             
             group.children[1].material.color.setHex(color);
-
             const scale = 1 + (fort.tier - 1) * 0.4;
             group.scale.set(scale, scale, scale);
             
@@ -228,48 +223,43 @@ export class GameRenderer {
             }
         }
 
-        if (!fort.paths || fort.paths.length === 0) {
-            return;
-        }
+        if (!fort.paths || fort.paths.length === 0) return;
 
         const startPos = this.fortressMeshes[fort.id].position;
         fort.paths.forEach(targetId => {
             const targetMesh = this.fortressMeshes[targetId];
-            if (!targetMesh) {
-                return;
-            }
+            if (!targetMesh) return;
 
             const points = [];
             points.push(startPos);
             points.push(targetMesh.position);
 
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            // Use LineBasicMaterial for paths
             const material = new THREE.LineBasicMaterial({ 
                 color: teamColor || 0xffaa00, 
-                linewidth: 3,
                 transparent: true,
                 opacity: 0.6
             });
             const line = new THREE.Line(geometry, material);
             
             const key = `${keyPrefix}${targetId}`;
+            // Metadata for raycasting
+            line.userData = { type: 'path', pathId: key };
+            
             this.scene.add(line);
             this.pathLines[key] = line;
         });
     }
 
     updatePackets(edgeData) {
-        if (!this.packetMesh || !this.vertices.length) {
-            return;
-        }
+        if (!this.packetMesh || !this.vertices.length) return;
 
         let instanceIdx = 0;
         const limit = 4000;
 
         Object.values(edgeData).forEach(edge => {
-            if (!edge.packets || edge.packets.length === 0) {
-                return;
-            }
+            if (!edge.packets || edge.packets.length === 0) return;
 
             const uCoords = this.vertices[edge.u];
             const vCoords = this.vertices[edge.v];
@@ -277,27 +267,19 @@ export class GameRenderer {
             const endVec = new THREE.Vector3(vCoords[0], vCoords[1], vCoords[2]);
 
             edge.packets.forEach(packet => {
-                if (instanceIdx >= limit) {
-                    return;
-                }
+                if (instanceIdx >= limit) return;
 
                 const troopCount = Math.min(5, Math.ceil(packet.amount / 5)); 
-                
                 for (let i = 0; i < troopCount; i++) {
-                    if (instanceIdx >= limit) {
-                        break;
-                    }
+                    if (instanceIdx >= limit) break;
 
                     const offset = (i * 0.02) * packet.direction;
                     const displayPos = Math.max(0, Math.min(1, packet.pos - offset));
-                    
                     const currentPos = new THREE.Vector3().lerpVectors(startVec, endVec, displayPos);
                     
                     this.dummy.position.copy(currentPos);
-                    
                     const s = packet.is_special ? 1.5 : 1.0;
                     this.dummy.scale.set(s, s, s);
-                    
                     this.dummy.updateMatrix();
                     this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
                     
@@ -307,9 +289,7 @@ export class GameRenderer {
                     } else {
                         pColor.setHex(0xff0000);
                     }
-
                     this.packetMesh.setColorAt(instanceIdx, pColor);
-                    
                     instanceIdx++;
                 }
             });
