@@ -20,7 +20,7 @@ export class GameRenderer {
         // State Tracking
         this.currentSelectedFace = null;
         this.currentHoveredFace = null;
-        this.baseFaceColors = []; // Store original colors to prevent permanent lightening
+        this.baseFaceColors = []; 
 
         this.init();
     }
@@ -57,7 +57,7 @@ export class GameRenderer {
 
     initWorld(vertices, faces, faceColors) {
         this.vertices = vertices;
-        this.baseFaceColors = [...faceColors]; // Backup original state
+        this.baseFaceColors = [...faceColors]; 
         if (this.sphereMesh) this.scene.remove(this.sphereMesh);
 
         const geometry = new THREE.BufferGeometry();
@@ -104,7 +104,6 @@ export class GameRenderer {
 
     highlightFortressHover(id) {
         if (this.fortressMeshes[id]) {
-            // Roof is index 1 in children
             this.fortressMeshes[id].children[1].material.emissive.setHex(0x444400);
         }
     }
@@ -113,7 +112,7 @@ export class GameRenderer {
         const line = this.pathLines[pathId];
         if (line) {
             line.material.opacity = 1.0;
-            line.material.color.setHex(0xffffff); // White highlight for hover
+            line.material.color.setHex(0xffffff); 
         }
     }
 
@@ -126,14 +125,10 @@ export class GameRenderer {
     }
 
     clearHoverHighlight() {
-        // Reset fortress emissives
         Object.values(this.fortressMeshes).forEach(g => g.children[1].material.emissive.setHex(0));
-        
-        // Reset all path opacities to base (visual reset handled in updatePathVisuals)
         Object.values(this.pathLines).forEach(l => {
             l.material.opacity = 0.6;
         });
-
         this.currentHoveredFace = null;
     }
 
@@ -143,13 +138,12 @@ export class GameRenderer {
 
     updateFaceColors(faceColors) {
         if (!this.sphereMesh) return;
-        this.baseFaceColors = [...faceColors]; // Sync current server state
+        this.baseFaceColors = [...faceColors]; 
         
         const colors = this.sphereMesh.geometry.attributes.color.array;
         faceColors.forEach((colorHex, i) => {
             let color = new THREE.Color(colorHex);
             
-            // Selection has priority
             if (i === this.currentSelectedFace) {
                 color.offsetHSL(0, 0, 0.3);
             } else if (i === this.currentHoveredFace) {
@@ -174,7 +168,7 @@ export class GameRenderer {
             let color = 0x888888; 
             if (fort.owner) {
                 if (fort.owner === currentUsername) color = 0xff0000;
-                else if (fort.owner.includes('Green')) color = 0x00ff00;
+                else if (fort.owner.includes('Gorgon') || fort.owner.includes('Green')) color = 0x00ff00;
                 else if (fort.owner.includes('Yellow')) color = 0xffff00;
                 else color = 0x0000ff;
             }
@@ -202,7 +196,6 @@ export class GameRenderer {
             const targetMesh = this.fortressMeshes[targetId];
             if (!targetMesh) return;
 
-            // Use LineBasicMaterial - fixed: no emissive property here
             const material = new THREE.LineBasicMaterial({ 
                 color: teamColor, 
                 transparent: true, 
@@ -237,7 +230,8 @@ export class GameRenderer {
                     this.dummy.scale.setScalar(packet.is_special ? 1.5 : 1.0);
                     this.dummy.updateMatrix();
                     this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
-                    this.packetMesh.setColorAt(instanceIdx, new THREE.Color(packet.owner.includes('Green') ? 0x00ff00 : 0xff0000));
+                    const pColor = (packet.owner.includes('Gorgon') || packet.owner.includes('Green')) ? 0x00ff00 : 0xff0000;
+                    this.packetMesh.setColorAt(instanceIdx, new THREE.Color(pColor));
                     instanceIdx++;
                 }
             });
@@ -249,6 +243,7 @@ export class GameRenderer {
     }
 
     focusCamera(pos) {
+        if (!pos) return;
         const target = new THREE.Vector3(...pos);
         this.camera.position.copy(target.clone().multiplyScalar(2.0)); 
         this.camera.lookAt(0, 0, 0);

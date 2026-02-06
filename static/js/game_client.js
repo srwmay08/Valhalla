@@ -27,13 +27,20 @@ export class GameClient {
                 })
                 .then(data => {
                     this.gameState = data;
+                    
+                    // Critical: Initialize the world visuals immediately when data arrives
                     if (this.callbacks.onInit) {
                         this.callbacks.onInit(data);
                     }
+                    
+                    // Then handle the start sequence/countdown
                     if (this.callbacks.onStartSequence) {
                         this.callbacks.onStartSequence(() => {
+                            console.log("Game Unlocked");
                             this.isLocked = false;
                         });
+                    } else {
+                        this.isLocked = false;
                     }
                 })
                 .catch(err => console.error("Failed to load game state:", err));
