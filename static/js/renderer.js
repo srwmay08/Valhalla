@@ -17,6 +17,9 @@ export class GameRenderer {
         this.dummy = new THREE.Object3D();
         this.vertices = [];
 
+        // Track highlights
+        this.currentSelectedFace = null;
+
         this.init();
     }
 
@@ -122,6 +125,39 @@ export class GameRenderer {
         });
     }
 
+    highlightFortressHover(id) {
+        const group = this.fortressMeshes[id];
+        if (group) {
+            // Emissive highlight on the roof
+            group.children[1].material.emissive = new THREE.Color(0x333300);
+        }
+    }
+
+    highlightFaceHover(faceIdx) {
+        if (!this.sphereMesh) return;
+        const colors = this.sphereMesh.geometry.attributes.color.array;
+        const base = faceIdx * 9;
+        // Brighten the vertices slightly for hover
+        for(let i=0; i<9; i++) {
+            colors[base + i] *= 1.5;
+        }
+        this.sphereMesh.geometry.attributes.color.needsUpdate = true;
+    }
+
+    setFaceSelection(faceIdx) {
+        // This would ideally use a separate selection mesh or vertex colors
+        // For now, we clear the hover which resets colors via the next update loop
+        this.currentSelectedFace = faceIdx;
+    }
+
+    clearHoverHighlight() {
+        // Reset fortress emissive
+        Object.values(this.fortressMeshes).forEach(group => {
+            group.children[1].material.emissive = new THREE.Color(0x000000);
+        });
+        // Face highlights are naturally reset during the next updateFaceColors call
+    }
+
     updateFaceColors(faceColors) {
         if (!this.sphereMesh) {
             return;
@@ -130,7 +166,13 @@ export class GameRenderer {
         const colors = this.sphereMesh.geometry.attributes.color.array;
         
         faceColors.forEach((colorHex, i) => {
-            const color = new THREE.Color(colorHex);
+            let color = new THREE.Color(colorHex);
+            
+            // If this face is selected, make it pop
+            if (this.currentSelectedFace !== null && i === this.currentSelectedFace) {
+                color.offsetHSL(0, 0, 0.2);
+            }
+
             const baseIndex = i * 9;
             
             colors[baseIndex] = color.r;
@@ -148,9 +190,6 @@ export class GameRenderer {
     }
 
     updateFortresses(fortressData, currentUsername) {
-        console.groupCollapsed("[RENDERER] Updating Fortresses");
-        console.log("Current Local User:", currentUsername);
-
         Object.values(fortressData).forEach(fort => {
             const group = this.fortressMeshes[fort.id];
             if (!group) {
@@ -161,7 +200,6 @@ export class GameRenderer {
             if (fort.owner) {
                 if (fort.owner === currentUsername) {
                     color = 0xff0000; // Red for Player
-                    console.log(`Fortress ${fort.id} owned by PLAYER. Setting color to RED.`);
                 } else if (fort.owner.includes('Green')) {
                     color = 0x00ff00;
                 } else if (fort.owner.includes('Yellow')) {
@@ -178,7 +216,6 @@ export class GameRenderer {
             
             this.updatePathVisuals(fort, color);
         });
-        console.groupEnd();
     }
 
     updatePathVisuals(fort, teamColor) {

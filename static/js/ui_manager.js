@@ -41,6 +41,29 @@ export class UIManager {
         }, 1000);
     }
 
+    showFaceInfo(faceIdx) {
+        if (!this.infoPanel) return;
+        this.infoPanel.style.display = 'block';
+
+        // Get actual game state data for this face
+        const state = this.client.gameState;
+        const landType = state.face_terrain ? state.face_terrain[faceIdx] : 'Wilderness';
+        const owner = state.sector_owners ? (state.sector_owners[faceIdx] || 'Unclaimed') : 'Unclaimed';
+
+        document.getElementById('ui-land').innerText = landType;
+        document.getElementById('ui-type').innerText = "Sector Area";
+        document.getElementById('ui-owner').innerText = owner;
+        document.getElementById('ui-units').innerText = "---";
+        document.getElementById('ui-tier').innerText = "---";
+        document.getElementById('ui-special').innerText = "---";
+
+        const actionArea = document.getElementById('action-area');
+        if (actionArea) actionArea.style.display = 'none';
+
+        let specContainer = document.getElementById('spec-container');
+        if (specContainer) specContainer.innerHTML = '<i>Dominion Control Required to Build</i>';
+    }
+
     showFortressInfo(fort) {
         if (!this.infoPanel) {
             return;
@@ -94,7 +117,7 @@ export class UIManager {
     }
 
     hideFortressInfo() {
-        // Implementation for clearing UI state if required
+        if (this.infoPanel) this.infoPanel.style.display = 'none';
     }
 
     highlightSelection(id, isActive) {
