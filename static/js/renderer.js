@@ -18,12 +18,12 @@ export class GameRenderer {
         this.vertices = [];
 
         this.currentSelectedFace = null;
+        this.currentHoveredFace = null;
 
         this.init();
     }
 
     init() {
-        console.log("[RENDERER] Initializing WebGL Scene...");
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.container.appendChild(this.renderer.domElement);
         
@@ -34,7 +34,7 @@ export class GameRenderer {
         dirLight.position.set(10, 10, 10);
         this.scene.add(dirLight);
 
-        this.camera.position.z = 2.5;
+        this.camera.position.set(0, 0, 2.5);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
 
@@ -54,14 +54,8 @@ export class GameRenderer {
     }
 
     initWorld(vertices, faces, faceColors) {
-        console.group("[RENDERER] World Initialization");
-        console.log("Vertices:", vertices.length);
-        console.log("Faces:", faces.length);
         this.vertices = vertices;
-
-        if (this.sphereMesh) {
-            this.scene.remove(this.sphereMesh);
-        }
+        if (this.sphereMesh) this.scene.remove(this.sphereMesh);
 
         const geometry = new THREE.BufferGeometry();
         const positions = [];
@@ -71,53 +65,34 @@ export class GameRenderer {
             const vA = vertices[face[0]];
             const vB = vertices[face[1]];
             const vC = vertices[face[2]];
-
             positions.push(...vA, ...vB, ...vC);
 
-            const colorHex = faceColors[faceIdx];
-            const color = new THREE.Color(colorHex);
-            colors.push(color.r, color.g, color.b);
-            colors.push(color.r, color.g, color.b);
-            colors.push(color.r, color.g, color.b);
+            const color = new THREE.Color(faceColors[faceIdx]);
+            for(let i=0; i<3; i++) colors.push(color.r, color.g, color.b);
         });
 
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.computeVertexNormals();
 
-        const material = new THREE.MeshLambertMaterial({ 
-            vertexColors: true,
-            flatShading: true 
-        });
-
+        const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
         this.sphereMesh = new THREE.Mesh(geometry, material);
         this.sphereMesh.userData = { type: 'world' }; 
         this.scene.add(this.sphereMesh);
 
         this.initFortressVisuals(vertices);
-        console.groupEnd();
     }
 
     initFortressVisuals(vertices) {
         vertices.forEach((v, idx) => {
             const group = new THREE.Group();
-            
-            const baseGeom = new THREE.CylinderGeometry(0.035, 0.045, 0.02, 6);
-            const baseMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-            const base = new THREE.Mesh(baseGeom, baseMat);
-            group.add(base);
-
-            const roofGeom = new THREE.ConeGeometry(0.05, 0.02, 6);
-            const roofMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
-            const roof = new THREE.Mesh(roofGeom, roofMat);
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.02, 6), new THREE.MeshLambertMaterial({ color: 0x888888 }));
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.02, 6), new THREE.MeshLambertMaterial({ color: 0x444444 }));
             roof.position.y = 0.02;
+            group.add(base);
             group.add(roof);
-
             group.position.set(v[0], v[1], v[2]);
-            
-            const normal = new THREE.Vector3(v[0], v[1], v[2]).normalize();
-            group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-            
+            group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(v[0], v[1], v[2]).normalize());
             group.userData = { type: 'fortress', id: idx };
             this.scene.add(group);
             this.fortressMeshes[idx] = group;
@@ -125,28 +100,19 @@ export class GameRenderer {
     }
 
     highlightFortressHover(id) {
-        const group = this.fortressMeshes[id];
-        if (group) {
-            group.children[1].material.emissive = new THREE.Color(0x444400);
-        }
+        if (this.fortressMeshes[id]) this.fortressMeshes[id].children[1].material.emissive.setHex(0x444400);
     }
 
     highlightPathHover(pathId) {
         const line = this.pathLines[pathId];
         if (line) {
             line.material.opacity = 1.0;
-            line.material.emissive = new THREE.Color(0xffffff);
+            line.material.color.setHex(0xffffff);
         }
     }
 
     highlightFaceHover(faceIdx) {
-        if (!this.sphereMesh) return;
-        const colors = this.sphereMesh.geometry.attributes.color.array;
-        const base = faceIdx * 9;
-        for (let i = 0; i < 9; i++) {
-            colors[base + i] *= 1.4;
-        }
-        this.sphereMesh.geometry.attributes.color.needsUpdate = true;
+        this.currentHoveredFace = faceIdx;
     }
 
     setFaceSelection(faceIdx) {
@@ -154,15 +120,12 @@ export class GameRenderer {
     }
 
     clearHoverHighlight() {
-        Object.values(this.fortressMeshes).forEach(group => {
-            group.children[1].material.emissive = new THREE.Color(0x000000);
+        Object.values(this.fortressMeshes).forEach(g => g.children[1].material.emissive.setHex(0));
+        Object.values(this.pathLines).forEach(l => {
+            l.material.opacity = 0.6;
+            // Restore team color in actual update loop
         });
-        Object.values(this.pathLines).forEach(line => {
-            line.material.opacity = 0.6;
-            if (line.material.emissive) {
-                line.material.emissive = new THREE.Color(0x000000);
-            }
-        });
+        this.currentHoveredFace = null;
     }
 
     updateFaceColors(faceColors) {
@@ -170,19 +133,15 @@ export class GameRenderer {
         const colors = this.sphereMesh.geometry.attributes.color.array;
         faceColors.forEach((colorHex, i) => {
             let color = new THREE.Color(colorHex);
-            if (this.currentSelectedFace !== null && i === this.currentSelectedFace) {
-                color.offsetHSL(0, 0, 0.25);
+            if (i === this.currentSelectedFace) color.offsetHSL(0, 0, 0.3);
+            else if (i === this.currentHoveredFace) color.offsetHSL(0, 0, 0.15);
+            
+            const base = i * 9;
+            for(let j=0; j<3; j++) {
+                colors[base + j*3] = color.r;
+                colors[base + j*3 + 1] = color.g;
+                colors[base + j*3 + 2] = color.b;
             }
-            const baseIndex = i * 9;
-            colors[baseIndex] = color.r;
-            colors[baseIndex+1] = color.g;
-            colors[baseIndex+2] = color.b;
-            colors[baseIndex+3] = color.r;
-            colors[baseIndex+4] = color.g;
-            colors[baseIndex+5] = color.b;
-            colors[baseIndex+6] = color.r;
-            colors[baseIndex+7] = color.g;
-            colors[baseIndex+8] = color.b;
         });
         this.sphereMesh.geometry.attributes.color.needsUpdate = true;
     }
@@ -191,62 +150,35 @@ export class GameRenderer {
         Object.values(fortressData).forEach(fort => {
             const group = this.fortressMeshes[fort.id];
             if (!group) return;
-
             let color = 0x888888; 
-            if (fort.owner) {
-                if (fort.owner === currentUsername) {
-                    color = 0xff0000;
-                } else if (fort.owner.includes('Green')) {
-                    color = 0x00ff00;
-                } else if (fort.owner.includes('Yellow')) {
-                    color = 0xffff00;
-                } else {
-                    color = 0x0000ff;
-                }
-            }
+            if (fort.owner === currentUsername) color = 0xff0000;
+            else if (fort.owner?.includes('Green')) color = 0x00ff00;
+            else if (fort.owner?.includes('Yellow')) color = 0xffff00;
+            else if (fort.owner) color = 0x0000ff;
             
             group.children[1].material.color.setHex(color);
-            const scale = 1 + (fort.tier - 1) * 0.4;
-            group.scale.set(scale, scale, scale);
-            
+            const s = 1 + (fort.tier - 1) * 0.4;
+            group.scale.set(s, s, s);
             this.updatePathVisuals(fort, color);
         });
     }
 
     updatePathVisuals(fort, teamColor) {
         const keyPrefix = `path_${fort.id}_`;
-        
         for (const key in this.pathLines) {
             if (key.startsWith(keyPrefix)) {
                 this.scene.remove(this.pathLines[key]);
                 delete this.pathLines[key];
             }
         }
-
-        if (!fort.paths || fort.paths.length === 0) return;
-
-        const startPos = this.fortressMeshes[fort.id].position;
+        if (!fort.paths) return;
+        const start = this.fortressMeshes[fort.id].position;
         fort.paths.forEach(targetId => {
-            const targetMesh = this.fortressMeshes[targetId];
-            if (!targetMesh) return;
-
-            const points = [];
-            points.push(startPos);
-            points.push(targetMesh.position);
-
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            // Use LineBasicMaterial for paths
-            const material = new THREE.LineBasicMaterial({ 
-                color: teamColor || 0xffaa00, 
-                transparent: true,
-                opacity: 0.6
-            });
-            const line = new THREE.Line(geometry, material);
-            
+            const target = this.fortressMeshes[targetId];
+            if (!target) return;
+            const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([start, target.position]), new THREE.LineBasicMaterial({ color: teamColor, transparent: true, opacity: 0.6 }));
             const key = `${keyPrefix}${targetId}`;
-            // Metadata for raycasting
             line.userData = { type: 'path', pathId: key };
-            
             this.scene.add(line);
             this.pathLines[key] = line;
         });
@@ -254,72 +186,42 @@ export class GameRenderer {
 
     updatePackets(edgeData) {
         if (!this.packetMesh || !this.vertices.length) return;
-
-        let instanceIdx = 0;
-        const limit = 4000;
-
+        let idx = 0;
         Object.values(edgeData).forEach(edge => {
-            if (!edge.packets || edge.packets.length === 0) return;
-
-            const uCoords = this.vertices[edge.u];
-            const vCoords = this.vertices[edge.v];
-            const startVec = new THREE.Vector3(uCoords[0], uCoords[1], uCoords[2]);
-            const endVec = new THREE.Vector3(vCoords[0], vCoords[1], vCoords[2]);
-
-            edge.packets.forEach(packet => {
-                if (instanceIdx >= limit) return;
-
-                const troopCount = Math.min(5, Math.ceil(packet.amount / 5)); 
-                for (let i = 0; i < troopCount; i++) {
-                    if (instanceIdx >= limit) break;
-
-                    const offset = (i * 0.02) * packet.direction;
-                    const displayPos = Math.max(0, Math.min(1, packet.pos - offset));
-                    const currentPos = new THREE.Vector3().lerpVectors(startVec, endVec, displayPos);
-                    
-                    this.dummy.position.copy(currentPos);
-                    const s = packet.is_special ? 1.5 : 1.0;
+            if (!edge.packets) return;
+            const start = new THREE.Vector3(...this.vertices[edge.u]);
+            const end = new THREE.Vector3(...this.vertices[edge.v]);
+            edge.packets.forEach(p => {
+                if (idx >= 4000) return;
+                const count = Math.min(5, Math.ceil(p.amount / 5));
+                for (let i=0; i<count; i++) {
+                    if (idx >= 4000) break;
+                    const pos = Math.max(0, Math.min(1, p.pos - (i * 0.02) * p.direction));
+                    this.dummy.position.lerpVectors(start, end, pos);
+                    const s = p.is_special ? 1.5 : 1.0;
                     this.dummy.scale.set(s, s, s);
                     this.dummy.updateMatrix();
-                    this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
-                    
-                    let pColor = new THREE.Color(0xffffff);
-                    if (packet.owner.includes('Green')) {
-                        pColor.setHex(0x00ff00);
-                    } else {
-                        pColor.setHex(0xff0000);
-                    }
-                    this.packetMesh.setColorAt(instanceIdx, pColor);
-                    instanceIdx++;
+                    this.packetMesh.setMatrixAt(idx, this.dummy.matrix);
+                    this.packetMesh.setColorAt(idx, new THREE.Color(p.owner.includes('Green') ? 0x00ff00 : 0xff0000));
+                    idx++;
                 }
             });
         });
-
-        const zeroMatrix = new THREE.Matrix4().set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
-        for (let i = instanceIdx; i < limit; i++) {
-            this.packetMesh.setMatrixAt(i, zeroMatrix);
-        }
-
+        const zero = new THREE.Matrix4().set(0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0);
+        for (let i=idx; i<4000; i++) this.packetMesh.setMatrixAt(i, zero);
         this.packetMesh.instanceMatrix.needsUpdate = true;
-        if (this.packetMesh.instanceColor) {
-            this.packetMesh.instanceColor.needsUpdate = true;
-        }
+        if (this.packetMesh.instanceColor) this.packetMesh.instanceColor.needsUpdate = true;
     }
 
     focusCamera(pos) {
-        const target = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        const target = new THREE.Vector3(...pos);
         this.camera.position.copy(target.clone().multiplyScalar(2.0)); 
         this.camera.lookAt(0, 0, 0);
-        if (this.controls) {
-            this.controls.target.set(0, 0, 0);
-            this.controls.update();
-        }
+        this.controls?.update();
     }
 
     render() {
-        if (this.controls) {
-            this.controls.update();
-        }
+        this.controls?.update();
         this.renderer.render(this.scene, this.camera);
     }
 }

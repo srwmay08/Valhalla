@@ -25,17 +25,14 @@ export class UIManager {
 
         let count = 3;
         const timer = setInterval(() => {
-            if (count > 0) {
-                overlay.innerText = count;
-            } else if (count === 0) {
+            if (count > 0) overlay.innerText = count;
+            else if (count === 0) {
                 overlay.innerText = "GO!";
                 overlay.style.color = "#00ff00";
             } else {
                 clearInterval(timer);
                 overlay.remove();
-                if (callback) {
-                    callback();
-                }
+                if (callback) callback();
             }
             count--;
         }, 1000);
@@ -44,33 +41,40 @@ export class UIManager {
     showFaceInfo(faceIdx) {
         if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
+        const terrain = this.client.gameState.face_terrain?.[faceIdx] || 'Wilderness';
+        const owner = this.client.gameState.sector_owners?.[faceIdx] || 'Unclaimed';
 
-        // Get actual game state data for this face
-        const state = this.client.gameState;
-        const landType = state.face_terrain ? state.face_terrain[faceIdx] : 'Wilderness';
-        const owner = state.sector_owners ? (state.sector_owners[faceIdx] || 'Unclaimed') : 'Unclaimed';
-
-        document.getElementById('ui-land').innerText = landType;
-        document.getElementById('ui-type').innerText = "Sector Area";
+        document.getElementById('ui-land').innerText = terrain;
+        document.getElementById('ui-type').innerText = "Province Face";
         document.getElementById('ui-owner').innerText = owner;
         document.getElementById('ui-units').innerText = "---";
         document.getElementById('ui-tier').innerText = "---";
         document.getElementById('ui-special').innerText = "---";
+        
+        document.getElementById('action-area').style.display = 'none';
+        const spec = document.getElementById('spec-container');
+        if (spec) spec.innerHTML = '<i>Area Selection</i>';
+    }
 
-        const actionArea = document.getElementById('action-area');
-        if (actionArea) actionArea.style.display = 'none';
+    showPathInfo(sourceId, targetId) {
+        if (!this.infoPanel) return;
+        this.infoPanel.style.display = 'block';
+        
+        document.getElementById('ui-land').innerText = "Trade Route";
+        document.getElementById('ui-type').innerText = "Path";
+        document.getElementById('ui-owner').innerText = `From Node ${sourceId} to ${targetId}`;
+        document.getElementById('ui-units').innerText = "---";
+        document.getElementById('ui-tier').innerText = "---";
+        document.getElementById('ui-special').innerText = "---";
 
-        let specContainer = document.getElementById('spec-container');
-        if (specContainer) specContainer.innerHTML = '<i>Dominion Control Required to Build</i>';
+        document.getElementById('action-area').style.display = 'none';
+        const spec = document.getElementById('spec-container');
+        if (spec) spec.innerHTML = '<i>Active Supply Line</i>';
     }
 
     showFortressInfo(fort) {
-        if (!this.infoPanel) {
-            return;
-        }
-        
+        if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
-        
         document.getElementById('ui-land').innerText = fort.land_type || 'Unknown';
         document.getElementById('ui-type').innerText = fort.type;
         document.getElementById('ui-owner').innerText = fort.owner || 'Neutral';
@@ -79,9 +83,7 @@ export class UIManager {
         document.getElementById('ui-special').innerText = fort.special_active ? "Active" : "Inactive";
         
         const actionArea = document.getElementById('action-area');
-        if (actionArea) {
-            actionArea.style.display = 'block';
-        }
+        if (actionArea) actionArea.style.display = 'block';
 
         let specContainer = document.getElementById('spec-container');
         if (!specContainer) {
@@ -89,34 +91,23 @@ export class UIManager {
             specContainer.id = 'spec-container';
             specContainer.style.marginTop = '10px';
             specContainer.className = 'stat-row';
-            const slider = document.getElementById('slider-container');
-            slider.parentNode.insertBefore(specContainer, slider);
+            document.getElementById('slider-container').parentNode.insertBefore(specContainer, document.getElementById('slider-container'));
         }
 
         if (fort.owner === this.client.username) {
             let html = `<label class="stat-label">Build:</label> <select id="spec-select" style="background:#333;color:#fff;border:1px solid #555;">`;
-            
-            const terrain = fort.land_type || 'Default';
-            const options = this.client.getValidStructures(terrain);
-            
-            options.forEach(opt => {
-                const selected = (opt === fort.type) ? 'selected' : '';
-                html += `<option value="${opt}" ${selected}>${opt}</option>`;
+            this.client.getValidStructures(fort.land_type || 'Default').forEach(opt => {
+                html += `<option value="${opt}" ${opt === fort.type ? 'selected' : ''}>${opt}</option>`;
             });
             html += `</select>`;
             specContainer.innerHTML = html;
-
-            const select = document.getElementById('spec-select');
-            select.onchange = (e) => {
-                this.client.specializeFortress(fort.id, e.target.value);
-            };
-
+            document.getElementById('spec-select').onchange = (e) => this.client.specializeFortress(fort.id, e.target.value);
         } else {
             specContainer.innerHTML = '';
         }
     }
 
-    hideFortressInfo() {
+    hideInfo() {
         if (this.infoPanel) this.infoPanel.style.display = 'none';
     }
 
