@@ -2,74 +2,46 @@ export class UIManager {
     constructor(gameClient) {
         this.infoPanel = document.getElementById('game-ui');
         this.client = gameClient;
+        this.initMonitor();
     }
 
-    setClient(client) {
-        this.client = client;
+    initMonitor() {
+        // Create small overlay for ID monitoring
+        this.monitor = document.createElement('div');
+        this.monitor.style = "position:absolute; bottom:10px; right:10px; background:rgba(0,0,0,0.7); color:white; padding:5px; font-family:monospace; pointer-events:none; font-size:12px;";
+        document.body.appendChild(this.monitor);
     }
 
-    startCountdown(callback) {
-        const overlay = document.createElement('div');
-        overlay.id = "start-countdown";
-        overlay.style.position = "absolute";
-        overlay.style.top = "20%";
-        overlay.style.left = "50%";
-        overlay.style.transform = "translateX(-50%)";
-        overlay.style.fontSize = "120px";
-        overlay.style.color = "#ff0000";
-        overlay.style.fontFamily = "'Courier New', Courier, monospace";
-        overlay.style.fontWeight = "bold";
-        overlay.style.zIndex = "1000";
-        overlay.style.textShadow = "2px 2px #000";
-        document.body.appendChild(overlay);
-
-        let count = 3;
-        const timer = setInterval(() => {
-            if (count > 0) overlay.innerText = count;
-            else if (count === 0) {
-                overlay.innerText = "GO!";
-                overlay.style.color = "#00ff00";
-            } else {
-                clearInterval(timer);
-                overlay.remove();
-                if (callback) callback();
-            }
-            count--;
-        }, 1000);
+    updateHoverMonitor(type, id) {
+        this.monitor.innerHTML = `TYPE: ${type}<br>ID: ${id}`;
     }
 
     showFaceInfo(faceIdx) {
         if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
-        const terrain = this.client.gameState.face_terrain?.[faceIdx] || 'Wilderness';
-        const owner = this.client.gameState.sector_owners?.[faceIdx] || 'Unclaimed';
-
-        document.getElementById('ui-land').innerText = terrain;
-        document.getElementById('ui-type').innerText = "Province Face";
-        document.getElementById('ui-owner').innerText = owner;
+        document.getElementById('ui-land').innerText = "Province Area";
+        document.getElementById('ui-type').innerText = "Land Face";
+        document.getElementById('ui-owner').innerText = this.client.gameState.sector_owners?.[faceIdx] || "Wilderness";
         document.getElementById('ui-units').innerText = "---";
         document.getElementById('ui-tier').innerText = "---";
-        document.getElementById('ui-special').innerText = "---";
+        document.getElementById('ui-special').innerText = "Sector ID: " + faceIdx;
         
         document.getElementById('action-area').style.display = 'none';
-        const spec = document.getElementById('spec-container');
-        if (spec) spec.innerHTML = '<i>Area Selection</i>';
+        if (document.getElementById('spec-container')) document.getElementById('spec-container').innerHTML = '';
     }
 
-    showPathInfo(sourceId, targetId) {
+    showPathInfo(source, target) {
         if (!this.infoPanel) return;
         this.infoPanel.style.display = 'block';
+        document.getElementById('ui-land').innerText = "Supply Line";
+        document.getElementById('ui-type').innerText = "Active Road";
+        document.getElementById('ui-owner').innerText = `From Node ${source} to ${target}`;
+        document.getElementById('ui-units').innerText = "Flowing";
+        document.getElementById('ui-tier').innerText = "N/A";
+        document.getElementById('ui-special').innerText = "Pathing Active";
         
-        document.getElementById('ui-land').innerText = "Trade Route";
-        document.getElementById('ui-type').innerText = "Path";
-        document.getElementById('ui-owner').innerText = `From Node ${sourceId} to ${targetId}`;
-        document.getElementById('ui-units').innerText = "---";
-        document.getElementById('ui-tier').innerText = "---";
-        document.getElementById('ui-special').innerText = "---";
-
         document.getElementById('action-area').style.display = 'none';
-        const spec = document.getElementById('spec-container');
-        if (spec) spec.innerHTML = '<i>Active Supply Line</i>';
+        if (document.getElementById('spec-container')) document.getElementById('spec-container').innerHTML = '';
     }
 
     showFortressInfo(fort) {

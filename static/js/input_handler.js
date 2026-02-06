@@ -12,8 +12,6 @@ export class InputHandler {
         this.mouse = new THREE.Vector2();
         
         this.selectedSourceId = null;
-        this.hoveredObject = null;
-        this.hoveredType = null;
         
         this.initListeners();
     }
@@ -24,49 +22,40 @@ export class InputHandler {
     }
 
     onMouseMove(event) {
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
+        this.updateMouseCoords(event);
         this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
-        const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
 
-        let currentHover = null;
-        let currentType = null;
+        const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
+        
+        let hoverId = "None";
+        let hoverType = "Background";
 
         if (intersects.length > 0) {
-            // Find specific object types in the intersection list
+            const hit = intersects[0];
+            
+            // Priority 1: Fortress
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
-            const pathHit = intersects.find(h => h.object.userData?.type === 'path');
-            const worldHit = intersects.find(h => h.object.userData?.type === 'world');
-
             if (fortHit) {
-                currentHover = fortHit.object.parent.userData.id;
-                currentType = 'fortress';
-            } else if (pathHit) {
-                currentHover = pathHit.object.userData.pathId;
-                currentType = 'path';
-            } else if (worldHit) {
-                currentHover = worldHit.faceIndex;
-                currentType = 'face';
+                hoverId = fortHit.object.parent.userData.id;
+                hoverType = "Fortress";
+            } 
+            // Priority 2: Road
+            else if (hit.object.userData?.type === 'path') {
+                hoverId = hit.object.userData.pathId;
+                hoverType = "Road";
+            }
+            // Priority 3: World Face
+            else if (hit.object.userData?.type === 'world') {
+                hoverId = hit.faceIndex;
+                hoverType = "Face";
             }
         }
 
-        if (this.hoveredObject !== currentHover || this.hoveredType !== currentType) {
-            this.renderer.clearHoverHighlight();
-            this.hoveredObject = currentHover;
-            this.hoveredType = currentType;
-
-            if (this.hoveredType === 'fortress') {
-                this.renderer.highlightFortressHover(this.hoveredObject);
-            } else if (this.hoveredType === 'path') {
-                this.renderer.highlightPathHover(this.hoveredObject);
-            } else if (this.hoveredType === 'face') {
-                this.renderer.highlightFaceHover(this.hoveredObject);
-            }
-        }
+        this.ui.updateHoverMonitor(hoverType, hoverId);
     }
 
     onClick(event) {
+        this.updateMouseCoords(event);
         this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
         const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
 
@@ -87,19 +76,20 @@ export class InputHandler {
         }
     }
 
+    updateMouseCoords(event) {
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
     handleFaceClick(faceIdx) {
         this.ui.showFaceInfo(faceIdx);
-        this.renderer.setFaceSelection(faceIdx);
-        if (this.selectedSourceId !== null) {
-            this.ui.highlightSelection(this.selectedSourceId, false);
-            this.selectedSourceId = null;
-        }
+        this.renderer.highlightFaceSelection(faceIdx);
     }
 
     handlePathClick(pathId) {
         const parts = pathId.split('_');
-        const sourceId = parseInt(parts[1]);
-        const targetId = parseInt(parts[2]);
+        const sourceId = parts[1];
+        const targetId = parts[2];
         this.ui.showPathInfo(sourceId, targetId);
     }
 
@@ -108,7 +98,6 @@ export class InputHandler {
         if (!fort) return;
 
         this.ui.showFortressInfo(fort);
-        this.renderer.setFaceSelection(null);
 
         if (this.selectedSourceId === null) {
             if (fort.owner === this.client.username) {
@@ -129,7 +118,7 @@ export class InputHandler {
             this.ui.highlightSelection(this.selectedSourceId, false);
             this.selectedSourceId = null;
         }
-        this.renderer.setFaceSelection(null);
+        this.renderer.clearSelectionHighlights();
         this.ui.hideInfo();
     }
 }
