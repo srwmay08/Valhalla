@@ -7,7 +7,6 @@ export class InputHandler {
         this.ui = uiManager;
         
         this.raycaster = new THREE.Raycaster();
-        // Set threshold to make clicking thin lines easier
         this.raycaster.params.Line.threshold = 0.02; 
         this.mouse = new THREE.Vector2();
         
@@ -31,32 +30,72 @@ export class InputHandler {
         let hoverType = "Background";
 
         if (intersects.length > 0) {
-            // Priority selection in the hover list
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
             const pathHit = intersects.find(h => h.object.userData?.type === 'path');
             const worldHit = intersects.find(h => h.object.userData?.type === 'world');
 
+            this.renderer.clearHoverHighlight();
+
+            // Re-apply static selection highlights if a source is active
+            if (this.selectedSourceId !== null) {
+                this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
+            }
+
             if (fortHit) {
                 hoverId = fortHit.object.parent.userData.id;
                 hoverType = "Fortress";
-                this.renderer.clearHoverHighlight();
                 this.renderer.highlightFortressHover(hoverId);
+                
+                if (this.selectedSourceId !== null && this.selectedSourceId !== hoverId) {
+                    this.checkAndHighlightValidPath(this.selectedSourceId, hoverId);
+                }
             } else if (pathHit) {
                 hoverId = pathHit.object.userData.pathId;
                 hoverType = "Road";
-                this.renderer.clearHoverHighlight();
-                this.renderer.highlightPathHover(hoverId);
+                const { sourceId, targetId } = pathHit.object.userData;
+                
+                if (this.selectedSourceId !== null && sourceId == this.selectedSourceId) {
+                    this.checkAndHighlightValidPath(sourceId, targetId);
+                } else {
+                    this.renderer.highlightPathHover(hoverId, 0xffffff);
+                }
             } else if (worldHit) {
                 hoverId = worldHit.faceIndex;
                 hoverType = "Face";
-                this.renderer.clearHoverHighlight();
                 this.renderer.highlightFaceHover(hoverId);
             }
         } else {
             this.renderer.clearHoverHighlight();
+            if (this.selectedSourceId !== null) {
+                this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
+            }
         }
 
         this.ui.updateHoverMonitor(hoverType, hoverId);
+    }
+
+    checkAndHighlightValidPath(sourceId, targetId) {
+        const sourceFort = this.client.getFortress(sourceId);
+        const targetFort = this.client.getFortress(targetId);
+        
+        if (!sourceFort || !targetFort) return;
+
+        // Condition: Tier sufficient and path exists
+        // (Assuming tier 1 can attack/support tier 1-2, etc. adjust based on your balance)
+        const canReach = sourceFort.paths && sourceFort.paths.includes(parseInt(targetId));
+        const tierRequirement = targetFort.tier <= sourceFort.tier + 1; 
+
+        if (canReach && tierRequirement) {
+            const teamColor = this.getTeamColorHex(sourceFort.owner);
+            this.renderer.highlightPathHover(`path_${sourceId}_${targetId}`, teamColor);
+        }
+    }
+
+    getTeamColorHex(owner) {
+        if (owner === this.client.username) return 0xff0000;
+        if (owner.includes('Gorgon') || owner.includes('Green')) return 0x00ff00;
+        if (owner.includes('Yellow')) return 0xffff00;
+        return 0x0000ff;
     }
 
     onClick(event) {
@@ -109,6 +148,7 @@ export class InputHandler {
             if (fort.owner === this.client.username) {
                 this.selectedSourceId = id;
                 this.ui.highlightSelection(id, true);
+                this.renderer.highlightConnectedPaths(id, 0xffffff);
             }
         } else {
             if (this.selectedSourceId == id) {
@@ -125,6 +165,7 @@ export class InputHandler {
             this.selectedSourceId = null;
         }
         this.renderer.clearSelectionHighlights();
+        this.renderer.clearHoverHighlight();
         this.ui.hideInfo();
     }
 }

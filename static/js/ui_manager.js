@@ -17,7 +17,6 @@ export class UIManager {
     }
 
     startCountdown(unlockCallback) {
-        // Implementation of the pre-game countdown gate [cite: 856]
         let count = 3;
         const overlay = document.createElement('div');
         overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:2000; color:#00ff00; font-family:monospace; font-size:120px; text-shadow: 0 0 20px #00ff00;";
@@ -33,7 +32,6 @@ export class UIManager {
             } else {
                 clearInterval(timer);
                 document.body.removeChild(overlay);
-                // Unlock the GameClient to allow inputs and unit flow
                 unlockCallback(); 
             }
         }, 1000);

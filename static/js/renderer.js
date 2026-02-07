@@ -123,12 +123,22 @@ export class GameRenderer {
         }
     }
 
-    highlightPathHover(pathId) {
+    highlightPathHover(pathId, color = 0xffffff) {
         const line = this.pathLines[pathId];
         if (line) {
             line.material.opacity = 1.0;
-            line.material.emissive?.setHex(0x444444); 
+            line.material.emissive.setHex(color);
         }
+    }
+
+    highlightConnectedPaths(sourceId, color = 0xffffff) {
+        const prefix = `path_${sourceId}_`;
+        Object.keys(this.pathLines).forEach(key => {
+            if (key.startsWith(prefix)) {
+                this.pathLines[key].material.opacity = 1.0;
+                this.pathLines[key].material.emissive.setHex(color);
+            }
+        });
     }
 
     highlightFaceHover(faceIdx) {
@@ -143,7 +153,7 @@ export class GameRenderer {
         Object.values(this.fortressMeshes).forEach(g => g.children[1].material.emissive.setHex(0));
         Object.values(this.pathLines).forEach(l => {
             l.material.opacity = 0.6;
-            if (l.material.emissive) l.material.emissive.setHex(0);
+            l.material.emissive.setHex(0);
         });
         this.currentHoveredFace = null;
     }
@@ -214,27 +224,23 @@ export class GameRenderer {
 
             const endPos = targetMesh.position;
             const distance = startPos.distanceTo(endPos);
-            
-            // THICK ROAD LOGIC:
-            // We use CylinderGeometry to simulate 10px thick lines.
-            // Radius 0.008 at a camera Z of 2.5 is roughly 10-12 pixels wide.
             const thickness = 0.008; 
+            
             const geometry = new THREE.CylinderGeometry(thickness, thickness, distance, 6);
             const material = new THREE.MeshLambertMaterial({ 
                 color: teamColor, 
                 transparent: true, 
-                opacity: 0.6 
+                opacity: 0.6,
+                emissive: new THREE.Color(0x000000)
             });
 
             const lineMesh = new THREE.Mesh(geometry, material);
-            
-            // Position and Rotate the cylinder to connect the two fortresses
             const midpoint = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
             lineMesh.position.copy(midpoint);
             lineMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().subVectors(endPos, startPos).normalize());
 
             const key = `${keyPrefix}${targetId}`;
-            lineMesh.userData = { type: 'path', pathId: key };
+            lineMesh.userData = { type: 'path', pathId: key, sourceId: fort.id, targetId: targetId };
             
             this.scene.add(lineMesh);
             this.pathLines[key] = lineMesh;
