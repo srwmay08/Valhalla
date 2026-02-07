@@ -17,7 +17,6 @@ export class GameRenderer {
         this.dummy = new THREE.Object3D();
         this.vertices = [];
 
-        // State Tracking
         this.currentSelectedFace = null;
         this.currentHoveredFace = null;
         this.baseFaceColors = []; 
@@ -27,6 +26,7 @@ export class GameRenderer {
 
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
         this.container.appendChild(this.renderer.domElement);
         
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -47,6 +47,12 @@ export class GameRenderer {
         this.scene.add(this.packetMesh);
 
         window.addEventListener('resize', () => this.onWindowResize(), false);
+        this.animate();
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.render();
     }
 
     onWindowResize() {
@@ -87,10 +93,19 @@ export class GameRenderer {
     }
 
     initFortressVisuals(vertices) {
+        Object.values(this.fortressMeshes).forEach(m => this.scene.remove(m));
+        this.fortressMeshes = {};
+
         vertices.forEach((v, idx) => {
             const group = new THREE.Group();
-            const base = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.02, 6), new THREE.MeshLambertMaterial({ color: 0x888888 }));
-            const roof = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.02, 6), new THREE.MeshLambertMaterial({ color: 0x444444 }));
+            const base = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.035, 0.045, 0.02, 6), 
+                new THREE.MeshLambertMaterial({ color: 0x888888 })
+            );
+            const roof = new THREE.Mesh(
+                new THREE.ConeGeometry(0.05, 0.02, 6), 
+                new THREE.MeshLambertMaterial({ color: 0x444444 })
+            );
             roof.position.y = 0.02;
             group.add(base);
             group.add(roof);

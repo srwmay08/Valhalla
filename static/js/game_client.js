@@ -4,7 +4,9 @@ export class GameClient {
         this.callbacks = callbacks;
         this.isLocked = true;
         
-        this.username = document.getElementById('username-store').innerText; 
+        const usernameElement = document.getElementById('username-store');
+        this.username = usernameElement ? usernameElement.innerText : 'Anonymous'; 
+        
         this.gameState = {
             fortresses: {},
             vertices: [],
@@ -18,25 +20,25 @@ export class GameClient {
 
     initSocket() {
         this.socket.on('connect', () => {
+            console.log("[CLIENT] Connected. Fetching GameState...");
             fetch('/api/gamestate')
                 .then(r => {
-                    if (!r.ok) {
-                        throw new Error("API Error: " + r.statusText);
-                    }
+                    if (!r.ok) throw new Error("API Error: " + r.statusText);
                     return r.json();
                 })
                 .then(data => {
                     this.gameState = data;
                     
-                    // Critical: Initialize the world visuals immediately when data arrives
+                    // FIX: Always initialize the world immediately so it's visible
                     if (this.callbacks.onInit) {
+                        console.log("[CLIENT] Initializing Renderer...");
                         this.callbacks.onInit(data);
                     }
                     
-                    // Then handle the start sequence/countdown
+                    // Handle the UI lock/countdown separately
                     if (this.callbacks.onStartSequence) {
                         this.callbacks.onStartSequence(() => {
-                            console.log("Game Unlocked");
+                            console.log("[CLIENT] Game Unlocked");
                             this.isLocked = false;
                         });
                     } else {
@@ -72,23 +74,17 @@ export class GameClient {
     
     getValidStructures(terrainType) {
         const options = this.gameState.terrain_build_options;
-        if (!options) {
-            return ["Keep"];
-        }
+        if (!options) return ["Keep"];
         return options[terrainType] || options["Default"] || ["Keep"];
     }
 
     specializeFortress(id, typeName) {
-        if (this.isLocked) {
-            return;
-        }
+        if (this.isLocked) return;
         this.socket.emit('specialize_fortress', { id: id, type: typeName });
     }
 
     sendMove(sourceId, targetId) {
-        if (this.isLocked) {
-            return;
-        }
+        if (this.isLocked) return;
         this.socket.emit('submit_move', { source: sourceId, target: targetId });
     }
     
