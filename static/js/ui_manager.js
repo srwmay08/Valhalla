@@ -5,11 +5,38 @@ export class UIManager {
         this.initMonitor();
     }
 
+    setClient(client) {
+        this.client = client;
+    }
+
     initMonitor() {
         this.monitor = document.createElement('div');
         this.monitor.id = "hover-monitor";
         this.monitor.style = "position:absolute; bottom:20px; right:20px; background:rgba(0,0,0,0.8); color:#00ff00; padding:10px; font-family:monospace; pointer-events:none; font-size:14px; border:1px solid #00ff00; border-radius:4px; z-index:1000;";
         document.body.appendChild(this.monitor);
+    }
+
+    startCountdown(unlockCallback) {
+        // Implementation of the pre-game countdown gate [cite: 856]
+        let count = 3;
+        const overlay = document.createElement('div');
+        overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:2000; color:#00ff00; font-family:monospace; font-size:120px; text-shadow: 0 0 20px #00ff00;";
+        document.body.appendChild(overlay);
+
+        const timer = setInterval(() => {
+            if (count > 0) {
+                overlay.innerText = count;
+                count--;
+            } else if (count === 0) {
+                overlay.innerText = "DOMINATE";
+                count--;
+            } else {
+                clearInterval(timer);
+                document.body.removeChild(overlay);
+                // Unlock the GameClient to allow inputs and unit flow
+                unlockCallback(); 
+            }
+        }, 1000);
     }
 
     updateHoverMonitor(type, id) {
@@ -63,7 +90,10 @@ export class UIManager {
             specContainer = document.createElement('div');
             specContainer.id = 'spec-container';
             specContainer.style.marginTop = '10px';
-            document.getElementById('slider-container').parentNode.insertBefore(specContainer, document.getElementById('slider-container'));
+            const slider = document.getElementById('slider-container');
+            if (slider && slider.parentNode) {
+                slider.parentNode.insertBefore(specContainer, slider);
+            }
         }
 
         if (fort.owner === this.client.username) {

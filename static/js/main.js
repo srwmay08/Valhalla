@@ -16,6 +16,13 @@ function init() {
         onInit: (data) => {
             renderer.initWorld(data.vertices, data.faces, data.face_colors);
             renderer.updateFortresses(data.fortresses, client.username);
+            
+            // "North Pole Camera Lock" Logic 
+            // The camera starts at the North Pole. We find the player's home position
+            // and trigger a rotation to center it.
+            if (data.home_pos) {
+                renderer.focusCamera(data.home_pos);
+            }
         },
         onMapUpdate: (forts) => {
             renderer.updateFortresses(forts, client.username);
@@ -30,6 +37,7 @@ function init() {
             renderer.focusCamera(pos);
         },
         onStartSequence: (unlockCallback) => {
+            // Trigger the UI countdown which will eventually call unlockCallback
             ui.startCountdown(unlockCallback);
         }
     };
