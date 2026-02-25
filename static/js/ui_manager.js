@@ -12,7 +12,7 @@ export class UIManager {
     initMonitor() {
         this.monitor = document.createElement('div');
         this.monitor.id = "hover-monitor";
-        this.monitor.style = "position:absolute; bottom:20px; right:20px; background:rgba(0,0,0,0.8); color:#00ff00; padding:10px; font-family:monospace; pointer-events:none; font-size:14px; border:1px solid #00ff00; border-radius:4px; z-index:1000;";
+        this.monitor.style = "position:absolute; bottom:20px; left:20px; background:rgba(20,20,20,0.9); color:#ffffff; padding:15px; font-family:monospace; pointer-events:none; font-size:14px; border:1px solid #ffcc00; border-radius:0px; z-index:1000; min-width:200px;";
         document.body.appendChild(this.monitor);
     }
 
@@ -38,7 +38,15 @@ export class UIManager {
     }
 
     updateHoverMonitor(type, id) {
-        this.monitor.innerHTML = `[TARGETING SYSTEM]<br>TYPE: ${type}<br>IDENT: ${id}`;
+        let header = `<span style="color:#ffcc00; font-weight:bold; border-bottom:1px solid #ffcc00; display:block; margin-bottom:5px;">[TARGETING SYSTEM]</span>`;
+        let labelStyle = `color:#888888;`;
+        let valueStyle = `color:#ffffff;`;
+        
+        this.monitor.innerHTML = `
+            ${header}
+            <span style="${labelStyle}">TYPE:</span> <span style="${valueStyle}">${type}</span><br>
+            <span style="${labelStyle}">IDENT:</span> <span style="${valueStyle}">${id}</span>
+        `;
     }
 
     showFaceInfo(faceIdx) {

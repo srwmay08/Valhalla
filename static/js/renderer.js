@@ -162,7 +162,7 @@ export class GameRenderer {
         this.currentSelectedFace = null;
     }
 
-    updateFaceColors(faceColors) {
+    updateFaceColors(faceColors, sectorOwners = {}, currentUsername = "") {
         if (!this.sphereMesh) return;
         this.baseFaceColors = [...faceColors]; 
         
@@ -170,6 +170,17 @@ export class GameRenderer {
         faceColors.forEach((colorHex, i) => {
             let color = new THREE.Color(colorHex);
             
+            const owner = sectorOwners[i];
+            if (owner) {
+                let teamColorHex = 0x0000ff;
+                if (owner === currentUsername) teamColorHex = 0xff0000;
+                else if (owner.includes('Gorgon') || owner.includes('Green')) teamColorHex = 0x00ff00;
+                else if (owner.includes('Yellow')) teamColorHex = 0xffff00;
+                
+                const teamColor = new THREE.Color(teamColorHex);
+                color.lerp(teamColor, 0.4);
+            }
+
             if (i === this.currentSelectedFace) {
                 color.offsetHSL(0, 0, 0.3);
             } else if (i === this.currentHoveredFace) {

@@ -12,7 +12,8 @@ export class GameClient {
             vertices: [],
             faces: [],
             terrain_build_options: {}, 
-            fortress_types: {}
+            fortress_types: {},
+            sector_owners: {}
         };
 
         this.initSocket();
@@ -29,13 +30,11 @@ export class GameClient {
                 .then(data => {
                     this.gameState = data;
                     
-                    // FIX: Always initialize the world immediately so it's visible
                     if (this.callbacks.onInit) {
                         console.log("[CLIENT] Initializing Renderer...");
                         this.callbacks.onInit(data);
                     }
                     
-                    // Handle the UI lock/countdown separately
                     if (this.callbacks.onStartSequence) {
                         this.callbacks.onStartSequence(() => {
                             console.log("[CLIENT] Game Unlocked");
@@ -57,7 +56,7 @@ export class GameClient {
 
         this.socket.on('update_face_colors', (colors) => {
             if (this.callbacks.onColorUpdate) {
-                this.callbacks.onColorUpdate(colors);
+                this.callbacks.onColorUpdate(colors, this.gameState.sector_owners, this.username);
             }
         });
         
@@ -65,6 +64,13 @@ export class GameClient {
              if (this.callbacks.onFocus) {
                 this.callbacks.onFocus(data.position);
              }
+        });
+
+        this.socket.on('update_sector_ownership', (owners) => {
+            this.gameState.sector_owners = owners;
+            if (this.callbacks.onColorUpdate) {
+                this.callbacks.onColorUpdate(this.gameState.face_colors, owners, this.username);
+            }
         });
     }
 

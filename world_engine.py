@@ -199,7 +199,6 @@ def generate_game_world():
     # 5. Filter Roads based on Water and Identify Hazards (Lava)
     edge_to_faces = {}
     for face_idx, face in enumerate(faces):
-        # Create edges for this face
         f_edges = [
             tuple(sorted((face[0], face[1]))),
             tuple(sorted((face[1], face[2]))),
@@ -212,9 +211,15 @@ def generate_game_world():
 
     invalid_edges = set()
     lava_edges = set()
+    
+    # Track which vertices are touching water
+    water_vertices = set()
+    for face_idx, terrain in enumerate(face_terrain):
+        if terrain in ["Deep Sea", "Sea"]:
+            for v_idx in faces[face_idx]:
+                water_vertices.add(v_idx)
 
     for e, f_indices in edge_to_faces.items():
-        # Check Deep Sea / Sea (Removal)
         is_water = False
         for f_idx in f_indices:
             t = face_terrain[f_idx]
@@ -227,10 +232,8 @@ def generate_game_world():
         
         if is_water:
             invalid_edges.add(e)
-            continue # Don't process hazards if the edge is removed
+            continue 
 
-        # Check Lava (Hazard)
-        # An edge is a "Lava River" if it connects two Lava faces
         if len(f_indices) == 2:
             t1 = face_terrain[f_indices[0]]
             t2 = face_terrain[f_indices[1]]
@@ -246,7 +249,6 @@ def generate_game_world():
     
     face_colors = [TERRAIN_COLORS.get(t, 0xff00ff) for t in face_terrain]
 
-    # Initialize Edges Logic (Stream System + Hazards)
     edges_data = {}
     for u, v in valid_roads:
         key_tuple = tuple(sorted((u, v)))
@@ -260,10 +262,9 @@ def generate_game_world():
             "packets": [],      
             "battle_point": 0.5, 
             "contested": False,
-            "hazard": is_hazard # Phase 4: Flag for Combat Engine
+            "hazard": is_hazard 
         }
 
-    # Initialize Sanctuaries (Phase 3 Placeholder structure)
     sanctuaries = {}
 
     return {
@@ -271,6 +272,7 @@ def generate_game_world():
         "faces": faces,
         "face_colors": face_colors,
         "face_terrain": face_terrain,
+        "water_vertices": list(water_vertices),
         "adj": {k: list(v) for k, v in new_adj.items()},
         "roads": list(valid_roads),
         "edges": edges_data,
