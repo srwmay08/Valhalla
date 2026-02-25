@@ -12,6 +12,7 @@ export class GameRenderer {
         this.sphereMesh = null;
         this.fortressMeshes = {};
         this.pathLines = {}; 
+        this.labels = []; // For 3D overlays
         
         this.packetMesh = null;
         this.dummy = new THREE.Object3D();
@@ -95,6 +96,8 @@ export class GameRenderer {
     initFortressVisuals(vertices) {
         Object.values(this.fortressMeshes).forEach(m => this.scene.remove(m));
         this.fortressMeshes = {};
+        this.labels.forEach(l => l.remove());
+        this.labels = [];
 
         vertices.forEach((v, idx) => {
             const group = new THREE.Group();
@@ -114,6 +117,15 @@ export class GameRenderer {
             group.userData = { type: 'fortress', id: idx };
             this.scene.add(group);
             this.fortressMeshes[idx] = group;
+
+            // Create HUD element
+            const label = document.createElement('div');
+            label.className = 'fortress-label';
+            label.style.position = 'absolute';
+            label.style.pointerEvents = 'none';
+            label.innerHTML = `<div class="unit-count">0</div><div class="tier-dots"><span></span><span></span><span></span></div>`;
+            this.container.appendChild(label);
+            this.labels[idx] = { element: label, pos: new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(1.1) };
         });
     }
 
@@ -162,7 +174,7 @@ export class GameRenderer {
         this.currentSelectedFace = null;
     }
 
-    updateFaceColors(faceColors, sectorOwners = {}, currentUsername = "") {
+    updateFaceColors(faceColors) {
         if (!this.sphereMesh) return;
         this.baseFaceColors = [...faceColors]; 
         
@@ -170,17 +182,6 @@ export class GameRenderer {
         faceColors.forEach((colorHex, i) => {
             let color = new THREE.Color(colorHex);
             
-            const owner = sectorOwners[i];
-            if (owner) {
-                let teamColorHex = 0x0000ff;
-                if (owner === currentUsername) teamColorHex = 0xff0000;
-                else if (owner.includes('Gorgon') || owner.includes('Green')) teamColorHex = 0x00ff00;
-                else if (owner.includes('Yellow')) teamColorHex = 0xffff00;
-                
-                const teamColor = new THREE.Color(teamColorHex);
-                color.lerp(teamColor, 0.4);
-            }
-
             if (i === this.currentSelectedFace) {
                 color.offsetHSL(0, 0, 0.3);
             } else if (i === this.currentHoveredFace) {
@@ -215,6 +216,16 @@ export class GameRenderer {
             group.scale.set(scale, scale, scale);
             
             this.updatePathVisuals(fort, color);
+
+            // Update Label HUD
+            const label = this.labels[fort.id];
+            if (label) {
+                label.element.querySelector('.unit-count').innerText = Math.floor(fort.units);
+                const dots = label.element.querySelectorAll('.tier-dots span');
+                dots.forEach((dot, i) => {
+                    dot.style.background = (i < fort.tier) ? '#ffffff' : '#444444';
+                });
+            }
         });
     }
 
@@ -250,7 +261,7 @@ export class GameRenderer {
             lineMesh.position.copy(midpoint);
             lineMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().subVectors(endPos, startPos).normalize());
 
-            const key = `${keyPrefix}${targetId}`;
+            const key = `path_${fort.id}_${targetId}`;
             lineMesh.userData = { type: 'path', pathId: key, sourceId: fort.id, targetId: targetId };
             
             this.scene.add(lineMesh);
@@ -297,6 +308,19 @@ export class GameRenderer {
 
     render() {
         this.controls?.update();
+
+        // Update 3D label positions
+        this.labels.forEach(label => {
+            const vector = label.pos.clone().project(this.camera);
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+            label.element.style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
+            
+            // Fade based on distance/camera facing
+            const dot = label.pos.clone().normalize().dot(this.camera.position.clone().normalize());
+            label.element.style.opacity = dot > 0 ? 1 : 0;
+        });
+
         this.renderer.render(this.scene, this.camera);
     }
 }

@@ -101,7 +101,7 @@ def grow_body(start_node, target_size, occupied_tiles, neighbors_map):
     return body
 
 def generate_game_world():
-    """Generates the geometry, terrain, and graph connection data."""
+    """Generates geometry, terrain, and graph connections."""
     vertices, faces = create_ico_sphere(ICO_SUBDIVISIONS)
     adj_raw, roads_list = build_graph_from_mesh(vertices, faces)
     roads = set(roads_list)
@@ -196,7 +196,7 @@ def generate_game_world():
         is_near_plain = any(face_terrain[n] == "Plain" for n in face_neighbors[i])
         if is_near_plain and random.random() < SPAWN_CHANCE_FARM: face_terrain[i] = "Farm"
 
-    # 5. Filter Roads based on Water and Identify Hazards (Lava)
+    # 5. Filter Roads (ONLY remove if ALL adjacent faces are water)
     edge_to_faces = {}
     for face_idx, face in enumerate(faces):
         f_edges = [
@@ -211,29 +211,21 @@ def generate_game_world():
 
     invalid_edges = set()
     lava_edges = set()
-    
-    # Track which vertices are touching water
-    water_vertices = set()
-    for face_idx, terrain in enumerate(face_terrain):
-        if terrain in ["Deep Sea", "Sea"]:
-            for v_idx in faces[face_idx]:
-                water_vertices.add(v_idx)
 
     for e, f_indices in edge_to_faces.items():
-        is_water = False
+        # Check if ALL touching faces are water
+        all_water = True
         for f_idx in f_indices:
             t = face_terrain[f_idx]
-            if t == "Deep Sea": 
-                is_water = True
-                break
-            if t == "Sea":
-                is_water = True
+            if t not in ["Deep Sea", "Sea"]:
+                all_water = False
                 break
         
-        if is_water:
+        if all_water:
             invalid_edges.add(e)
             continue 
 
+        # Hazard check
         if len(f_indices) == 2:
             t1 = face_terrain[f_indices[0]]
             t2 = face_terrain[f_indices[1]]
@@ -253,9 +245,7 @@ def generate_game_world():
     for u, v in valid_roads:
         key_tuple = tuple(sorted((u, v)))
         key_str = str(key_tuple)
-        
         is_hazard = key_tuple in lava_edges
-
         edges_data[key_str] = {
             "u": u,
             "v": v,
@@ -265,16 +255,13 @@ def generate_game_world():
             "hazard": is_hazard 
         }
 
-    sanctuaries = {}
-
     return {
         "vertices": vertices,
         "faces": faces,
         "face_colors": face_colors,
         "face_terrain": face_terrain,
-        "water_vertices": list(water_vertices),
         "adj": {k: list(v) for k, v in new_adj.items()},
         "roads": list(valid_roads),
         "edges": edges_data,
-        "sanctuaries": sanctuaries
+        "sanctuaries": {}
     }

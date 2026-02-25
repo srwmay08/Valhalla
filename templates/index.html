@@ -1,49 +1,87 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
+    <title>Valhalla | Stream System</title>
     <style>
-        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-        .hud-panel { pointer-events: auto; background: rgba(0,0,0,0.8); color: white; padding: 15px; margin: 10px; border-radius: 8px; font-family: sans-serif; min-width: 200px; }
-        #game-ui { position: absolute; bottom: 20px; right: 20px; display: none; }
-        .stat-row { margin-bottom: 5px; }
-        .stat-label { color: #aaa; font-size: 0.9em; margin-right: 5px; }
-        h3, h4 { margin-top: 0; color: #ffcc00; }
-        button { background: #444; color: white; border: 1px solid #666; padding: 5px 10px; cursor: pointer; }
-        button:hover { background: #666; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #game-container { width: 100vw; height: 100vh; }
+        
+        .fortress-label {
+            color: white;
+            text-align: center;
+            font-family: monospace;
+            text-shadow: 1px 1px 2px black;
+        }
+        .unit-count {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .tier-dots {
+            display: flex;
+            justify-content: center;
+            gap: 2px;
+            margin-top: 2px;
+        }
+        .tier-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #444;
+            border: 1px solid #000;
+        }
+
+        #game-ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            background: rgba(15,15,15,0.9);
+            border: 1px solid #ffcc00;
+            color: #fff;
+            padding: 20px;
+            display: none;
+            z-index: 10;
+        }
+        .ui-header { color: #ffcc00; border-bottom: 2px solid #ffcc00; margin-bottom: 10px; font-weight: bold; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .stat-label { color: #888; }
+        #action-area { margin-top: 20px; border-top: 1px solid #333; padding-top: 10px; }
+        #btn-action {
+            width: 100%;
+            padding: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
+    <div id="username-store" style="display:none;">{{ username }}</div>
     <div id="game-container"></div>
-    
-    <div id="ui-layer">
-        <div style="position: absolute; top: 10px; left: 10px;" class="hud-panel">
-            <h3>I Have The High Ground</h3>
-            <button id="btn-restart">Restart Game</button>
-        </div>
-        
-        <div id="game-ui" class="hud-panel">
-            <h4>Fortress Intel</h4>
-            
-            <div class="stat-row"><span class="stat-label">Land:</span> <span id="ui-land"></span></div>
-            <div class="stat-row"><span class="stat-label">Type:</span> <span id="ui-type"></span></div>
-            <div class="stat-row"><span class="stat-label">Owner:</span> <span id="ui-owner"></span></div>
-            <div class="stat-row"><span class="stat-label">Units:</span> <span id="ui-units"></span></div>
-            <div class="stat-row"><span class="stat-label">Tier:</span> <span id="ui-tier"></span></div>
-            <div class="stat-row"><span class="stat-label">Special:</span> <span id="ui-special"></span></div>
 
-            <div id="slider-container"></div>
-            
-            <div id="action-area" style="margin-top: 10px; display: none;">
-                <button id="btn-action" style="width: 100%;">SELECT SOURCE</button>
-            </div>
+    <div id="game-ui">
+        <div class="ui-header">DATA TERMINAL</div>
+        <div class="stat-row"><span class="stat-label">REGION:</span> <span id="ui-land">Plain</span></div>
+        <div class="stat-row"><span class="stat-label">STRUCTURE:</span> <span id="ui-type">Keep</span></div>
+        <div class="stat-row"><span class="stat-label">OWNER:</span> <span id="ui-owner">Neutral</span></div>
+        <div class="stat-row"><span class="stat-label">STRENGTH:</span> <span id="ui-units">0</span></div>
+        <div class="stat-row"><span class="stat-label">TIER:</span> <span id="ui-tier">1</span></div>
+        <div class="stat-row"><span class="stat-label">STATUS:</span> <span id="ui-special">Ready</span></div>
+
+        <div id="action-area">
+            <button id="btn-action">SELECT SOURCE</button>
         </div>
     </div>
 
-    <div id="username-store" style="display:none">{{ user.username }}</div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    
-    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.skypack.dev/three@0.136.0"
+            }
+        }
+    </script>
+    <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

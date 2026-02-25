@@ -11,7 +11,6 @@ export class InputHandler {
         this.mouse = new THREE.Vector2();
         
         this.selectedSourceId = null;
-        
         this.initListeners();
     }
 
@@ -29,73 +28,34 @@ export class InputHandler {
         let hoverId = "None";
         let hoverType = "Background";
 
+        this.renderer.clearHoverHighlight();
+
         if (intersects.length > 0) {
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
             const pathHit = intersects.find(h => h.object.userData?.type === 'path');
             const worldHit = intersects.find(h => h.object.userData?.type === 'world');
 
-            this.renderer.clearHoverHighlight();
-
-            // Re-apply static selection highlights if a source is active
-            if (this.selectedSourceId !== null) {
-                this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
-            }
-
             if (fortHit) {
                 hoverId = fortHit.object.parent.userData.id;
                 hoverType = "Fortress";
                 this.renderer.highlightFortressHover(hoverId);
-                
-                if (this.selectedSourceId !== null && this.selectedSourceId !== hoverId) {
-                    this.checkAndHighlightValidPath(this.selectedSourceId, hoverId);
-                }
             } else if (pathHit) {
                 hoverId = pathHit.object.userData.pathId;
                 hoverType = "Road";
-                const { sourceId, targetId } = pathHit.object.userData;
-                
-                if (this.selectedSourceId !== null && sourceId == this.selectedSourceId) {
-                    this.checkAndHighlightValidPath(sourceId, targetId);
-                } else {
-                    this.renderer.highlightPathHover(hoverId, 0xffffff);
-                }
+                this.renderer.highlightPathHover(hoverId, 0xffffff);
             } else if (worldHit) {
                 hoverId = worldHit.faceIndex;
                 hoverType = "Face";
                 this.renderer.highlightFaceHover(hoverId);
             }
-        } else {
-            this.renderer.clearHoverHighlight();
-            if (this.selectedSourceId !== null) {
-                this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
-            }
+        }
+
+        // Keep active selection highlights visible
+        if (this.selectedSourceId !== null) {
+            this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
         }
 
         this.ui.updateHoverMonitor(hoverType, hoverId);
-    }
-
-    checkAndHighlightValidPath(sourceId, targetId) {
-        const sourceFort = this.client.getFortress(sourceId);
-        const targetFort = this.client.getFortress(targetId);
-        
-        if (!sourceFort || !targetFort) return;
-
-        // Condition: Tier sufficient and path exists
-        // (Assuming tier 1 can attack/support tier 1-2, etc. adjust based on your balance)
-        const canReach = sourceFort.paths && sourceFort.paths.includes(parseInt(targetId));
-        const tierRequirement = targetFort.tier <= sourceFort.tier + 1; 
-
-        if (canReach && tierRequirement) {
-            const teamColor = this.getTeamColorHex(sourceFort.owner);
-            this.renderer.highlightPathHover(`path_${sourceId}_${targetId}`, teamColor);
-        }
-    }
-
-    getTeamColorHex(owner) {
-        if (owner === this.client.username) return 0xff0000;
-        if (owner.includes('Gorgon') || owner.includes('Green')) return 0x00ff00;
-        if (owner.includes('Yellow')) return 0xffff00;
-        return 0x0000ff;
     }
 
     onClick(event) {
@@ -111,7 +71,7 @@ export class InputHandler {
             if (fortHit) {
                 this.handleFortressClick(fortHit.object.parent.userData.id);
             } else if (pathHit) {
-                this.handlePathClick(pathHit.object.userData.pathId);
+                this.handlePathClick(pathHit.object.userData);
             } else if (worldHit) {
                 this.handleFaceClick(worldHit.faceIndex);
             }
@@ -120,9 +80,41 @@ export class InputHandler {
         }
     }
 
-    updateMouseCoords(event) {
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    handleFortressClick(id) {
+        const fort = this.client.getFortress(id);
+        if (!fort) return;
+
+        if (this.selectedSourceId === null) {
+            if (fort.owner === this.client.username) {
+                this.selectedSourceId = id;
+                this.ui.showFortressInfo(fort);
+                this.ui.highlightSelection(id, true);
+                this.renderer.highlightConnectedPaths(id, 0xffffff);
+            }
+        } else {
+            // Clicking own fortress while selected deselects it
+            if (this.selectedSourceId === id) {
+                this.deselect();
+            } else {
+                // Clicking another fortress shows its info but keeps current source
+                this.ui.showFortressInfo(fort);
+            }
+        }
+    }
+
+    handlePathClick(pathData) {
+        const { sourceId, targetId, pathId } = pathData;
+
+        // If a source is selected and this road connects to it, send attack
+        if (this.selectedSourceId !== null && sourceId == this.selectedSourceId) {
+            this.client.sendMove(this.selectedSourceId, targetId);
+        } else {
+            // Otherwise show path info or cancel existing if logic permits
+            this.ui.showPathInfo(sourceId, targetId);
+            // Example: To "cancel" an attack path, you'd send a move with 0 flow or similar
+            // For now, simple interaction:
+            console.log("Road Interaction:", pathId);
+        }
     }
 
     handleFaceClick(faceIdx) {
@@ -130,33 +122,9 @@ export class InputHandler {
         this.renderer.highlightFaceSelection(faceIdx);
     }
 
-    handlePathClick(pathId) {
-        const parts = pathId.split('_');
-        const sourceId = parts[1];
-        const targetId = parts[2];
-        this.ui.showPathInfo(sourceId, targetId);
-    }
-
-    handleFortressClick(id) {
-        const fort = this.client.getFortress(id);
-        if (!fort) return;
-
-        this.ui.showFortressInfo(fort);
-        this.renderer.clearSelectionHighlights();
-
-        if (this.selectedSourceId === null) {
-            if (fort.owner === this.client.username) {
-                this.selectedSourceId = id;
-                this.ui.highlightSelection(id, true);
-                this.renderer.highlightConnectedPaths(id, 0xffffff);
-            }
-        } else {
-            if (this.selectedSourceId == id) {
-                this.deselect();
-            } else {
-                this.client.sendMove(this.selectedSourceId, id);
-            }
-        }
+    updateMouseCoords(event) {
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     }
 
     deselect() {
