@@ -1,5 +1,6 @@
 export class GameClient {
     constructor(callbacks) {
+        console.log("[CLIENT DEBUG] Initializing Socket.IO...");
         this.socket = io();
         this.callbacks = callbacks;
         this.isLocked = true;
@@ -21,33 +22,47 @@ export class GameClient {
 
     initSocket() {
         this.socket.on('connect', () => {
-            console.log("[CLIENT] Connected. Fetching GameState...");
+            console.log("[CLIENT DEBUG] Socket Connected! SID:", this.socket.id);
+            console.log("[CLIENT DEBUG] Fetching GameState from API...");
+            
             fetch('/api/gamestate')
                 .then(r => {
-                    if (!r.ok) throw new Error("API Error: " + r.statusText);
+                    if (!r.ok) {
+                        console.error("[CLIENT ERROR] API Response Not OK:", r.status);
+                        throw new Error("API Error: " + r.statusText);
+                    }
                     return r.json();
                 })
                 .then(data => {
+                    console.log("[CLIENT DEBUG] GameState Data Received. Fortress Count:", Object.keys(data.fortresses).length);
                     this.gameState = data;
                     
                     if (this.callbacks.onInit) {
-                        console.log("[CLIENT] Initializing Renderer...");
+                        console.log("[CLIENT DEBUG] Triggering Renderer Initialization...");
                         this.callbacks.onInit(data);
                     }
                     
                     if (this.callbacks.onStartSequence) {
                         this.callbacks.onStartSequence(() => {
-                            console.log("[CLIENT] Game Unlocked");
+                            console.log("[CLIENT DEBUG] Game Sequence Complete. UI Unlocked.");
                             this.isLocked = false;
                         });
                     } else {
                         this.isLocked = false;
                     }
                 })
-                .catch(err => console.error("Failed to load game state:", err));
+                .catch(err => {
+                    console.error("[CLIENT ERROR] Fatal Error loading game state:", err);
+                });
+        });
+
+        this.socket.on('connect_error', (err) => {
+            console.error("[CLIENT ERROR] Socket Connection Failed:", err.message);
         });
 
         this.socket.on('update_map', (fortresses) => {
+            // Log every 10th update to avoid flooding but confirm activity
+            if (Math.random() < 0.1) console.log("[CLIENT DEBUG] update_map received.");
             this.gameState.fortresses = fortresses;
             if (this.callbacks.onMapUpdate) {
                 this.callbacks.onMapUpdate(fortresses);
@@ -55,22 +70,17 @@ export class GameClient {
         });
 
         this.socket.on('update_face_colors', (colors) => {
+            console.log("[CLIENT DEBUG] update_face_colors received.");
             if (this.callbacks.onColorUpdate) {
                 this.callbacks.onColorUpdate(colors, this.gameState.sector_owners, this.username);
             }
         });
         
         this.socket.on('focus_camera', (data) => {
+             console.log("[CLIENT DEBUG] focus_camera command received for pos:", data.position);
              if (this.callbacks.onFocus) {
                 this.callbacks.onFocus(data.position);
              }
-        });
-
-        this.socket.on('update_sector_ownership', (owners) => {
-            this.gameState.sector_owners = owners;
-            if (this.callbacks.onColorUpdate) {
-                this.callbacks.onColorUpdate(this.gameState.face_colors, owners, this.username);
-            }
         });
     }
 
@@ -95,6 +105,7 @@ export class GameClient {
     }
     
     restartGame() {
+        console.log("[CLIENT DEBUG] Requesting Full Game Restart.");
         this.socket.emit('restart_game');
     }
 }

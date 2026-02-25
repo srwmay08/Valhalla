@@ -29,7 +29,15 @@ AI_NAME = "Gorgon"
 # --- Setup ---
 mongo = PyMongo()
 bcrypt = Bcrypt()
-socketio = SocketIO(async_mode='threading')
+
+# DEBUG: Added logger and engineio_logger to see raw socket packets in terminal
+socketio = SocketIO(
+    async_mode='threading', 
+    logger=True, 
+    engineio_logger=True, 
+    cors_allowed_origins="*"
+)
+
 login_manager = LoginManager()
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
@@ -48,7 +56,7 @@ game_state = {
     "roads": [],
     "fortresses": {},
     "sector_owners": {},
-    "dominance_cache": {} # Optimized O(1) lookup for fortresses
+    "dominance_cache": {}
 }
 
 # --- User Class ---
@@ -82,6 +90,7 @@ def load_user(user_id):
 
 # --- Background Task (The Game Loop) ---
 def background_thread():
+    print("[SERVER DEBUG] Background Game Loop Started.")
     while True:
         socketio.sleep(TICK_RATE)
         
@@ -92,30 +101,26 @@ def background_thread():
             map_changed = False
             color_changed = False
 
-            # 1. Sector Dominance (Updates dominance_cache)
             if combat_engine.process_sector_dominance(game_state):
                 color_changed = True
 
-            # 2. AI Logic
             process_ai_turn(game_state)
             
-            # 3. Fortress Production (Growth)
             if fortress_engine.process_fortress_production(game_state):
                 map_changed = True
                 
-            # 4. Fortress Upgrades
             if fortress_engine.process_fortress_upgrades(game_state):
                 map_changed = True
                 
-            # 5. Combat / Attack Paths
             if combat_engine.process_combat_flows(game_state):
                 map_changed = True
 
-        # --- Broadcast Updates ---
         if color_changed:
             socketio.emit('update_face_colors', game_state["face_colors"])
         
         if map_changed:
+            # DEBUG: Print when map updates are emitted
+            print(f"[SERVER DEBUG] Emitting update_map to all clients.")
             socketio.emit('update_map', game_state["fortresses"])
 
 # --- App Factory ---
@@ -203,7 +208,7 @@ def create_app():
                 game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
                 game_state["initialized"] = True
             
-            print(f"[SERVER DEBUG] API GameState requested by {current_user.username if current_user.is_authenticated else 'Anonymous'}")
+            print(f"[SERVER DEBUG] API GameState JSON served to: {current_user.username if current_user.is_authenticated else 'Anonymous'}")
             
             from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
             return jsonify({
@@ -225,7 +230,7 @@ def create_app():
             if thread is None:
                 thread = socketio.start_background_task(background_thread)
             if current_user.is_authenticated:
-                print(f"[SERVER DEBUG] Client Connected: {current_user.username}")
+                print(f"[SERVER DEBUG] WebSocket Client Connected: {current_user.username}")
                 emit('update_face_colors', game_state["face_colors"])
                 emit('update_map', game_state["fortresses"])
                 assign_home_sector(current_user)
