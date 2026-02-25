@@ -3,22 +3,25 @@ import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/js
 
 export class GameRenderer {
     constructor(containerId) {
-        console.log("[RENDER DEBUG] Initializing Renderer on container:", containerId);
         this.container = document.getElementById(containerId);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        
         this.controls = null;
         this.sphereMesh = null;
         this.fortressMeshes = {};
         this.pathLines = {}; 
         this.labels = []; 
+        
         this.packetMesh = null;
         this.dummy = new THREE.Object3D();
         this.vertices = [];
+
         this.currentSelectedFace = null;
         this.currentHoveredFace = null;
         this.baseFaceColors = []; 
+
         this.init();
     }
 
@@ -60,7 +63,6 @@ export class GameRenderer {
     }
 
     initWorld(vertices, faces, faceColors) {
-        console.log("[RENDER DEBUG] Building IcoSphere World with face count:", faces.length);
         this.vertices = vertices;
         this.baseFaceColors = [...faceColors]; 
         if (this.sphereMesh) this.scene.remove(this.sphereMesh);
@@ -73,13 +75,8 @@ export class GameRenderer {
             const vA = vertices[face[0]];
             const vB = vertices[face[1]];
             const vC = vertices[face[2]];
-            
-            if (!vA || !vB || !vC) {
-                console.error("[RENDER ERROR] Malformed Face detected at index:", faceIdx);
-                return;
-            }
-            
             positions.push(...vA, ...vB, ...vC);
+
             const color = new THREE.Color(faceColors[faceIdx]);
             for(let i=0; i<3; i++) colors.push(color.r, color.g, color.b);
         });
@@ -93,7 +90,6 @@ export class GameRenderer {
         this.sphereMesh.userData = { type: 'world' }; 
         this.scene.add(this.sphereMesh);
 
-        console.log("[RENDER DEBUG] World Mesh added to scene. Starting fortress visuals...");
         this.initFortressVisuals(vertices);
     }
 
@@ -128,9 +124,8 @@ export class GameRenderer {
             label.style.pointerEvents = 'none';
             label.innerHTML = `<div class="unit-count">0</div><div class="tier-dots"><span></span><span></span><span></span></div>`;
             this.container.appendChild(label);
-            this.labels[idx] = { element: label, pos: new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(1.1) };
+            this.labels[idx] = { element: label, pos: new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(1.15) };
         });
-        console.log("[RENDER DEBUG] Fortress meshes initialized:", Object.keys(this.fortressMeshes).length);
     }
 
     highlightFortressHover(id) {
@@ -139,7 +134,7 @@ export class GameRenderer {
         }
     }
 
-    highlightPathHover(pathId, color = 0xffffff) {
+    highlightPathHover(pathId, color = 0x444444) {
         const line = this.pathLines[pathId];
         if (line) {
             line.material.opacity = 1.0;
@@ -147,7 +142,7 @@ export class GameRenderer {
         }
     }
 
-    highlightConnectedPaths(sourceId, color = 0xffffff) {
+    highlightConnectedPaths(sourceId, color = 0x444444) {
         const prefix = `path_${sourceId}_`;
         Object.keys(this.pathLines).forEach(key => {
             if (key.startsWith(prefix)) {
@@ -159,10 +154,12 @@ export class GameRenderer {
 
     highlightFaceHover(faceIdx) {
         this.currentHoveredFace = faceIdx;
+        this.updateFaceColors(this.baseFaceColors);
     }
 
     highlightFaceSelection(faceIdx) {
         this.currentSelectedFace = faceIdx;
+        this.updateFaceColors(this.baseFaceColors);
     }
 
     clearHoverHighlight() {
@@ -172,10 +169,12 @@ export class GameRenderer {
             l.material.emissive.setHex(0);
         });
         this.currentHoveredFace = null;
+        this.updateFaceColors(this.baseFaceColors);
     }
 
     clearSelectionHighlights() {
         this.currentSelectedFace = null;
+        this.updateFaceColors(this.baseFaceColors);
     }
 
     updateFaceColors(faceColors) {
@@ -248,9 +247,8 @@ export class GameRenderer {
 
             const endPos = targetMesh.position;
             const distance = startPos.distanceTo(endPos);
-            const thickness = 0.008; 
             
-            const geometry = new THREE.CylinderGeometry(thickness, thickness, distance, 6);
+            const geometry = new THREE.CylinderGeometry(0.008, 0.008, distance, 6);
             const material = new THREE.MeshLambertMaterial({ 
                 color: teamColor, 
                 transparent: true, 
@@ -285,7 +283,6 @@ export class GameRenderer {
                     if (instanceIdx >= 4000) break;
                     const pos = Math.max(0, Math.min(1, packet.pos - (i * 0.02) * packet.direction));
                     this.dummy.position.lerpVectors(start, end, pos);
-                    this.dummy.scale.setScalar(packet.is_special ? 1.5 : 1.0);
                     this.dummy.updateMatrix();
                     this.packetMesh.setMatrixAt(instanceIdx, this.dummy.matrix);
                     const pColor = (packet.owner === 'Gorgon') ? 0x00ff00 : 0xff0000;
@@ -302,7 +299,6 @@ export class GameRenderer {
 
     focusCamera(pos) {
         if (!pos) return;
-        console.log("[RENDER DEBUG] Focusing camera on coordinates:", pos);
         const target = new THREE.Vector3(...pos);
         this.camera.position.copy(target.clone().multiplyScalar(2.0)); 
         this.camera.lookAt(0, 0, 0);
@@ -311,14 +307,18 @@ export class GameRenderer {
 
     render() {
         this.controls?.update();
+
         this.labels.forEach(label => {
             const vector = label.pos.clone().project(this.camera);
             const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
             const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+            
             label.element.style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
             const dot = label.pos.clone().normalize().dot(this.camera.position.clone().normalize());
-            label.element.style.opacity = dot > 0 ? 1 : 0;
+            label.element.style.opacity = dot > 0.4 ? 1 : 0;
+            label.element.style.zIndex = Math.floor(dot * 100);
         });
+
         this.renderer.render(this.scene, this.camera);
     }
 }

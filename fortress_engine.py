@@ -10,14 +10,12 @@ def initialize_fortresses(game_state):
     face_terrain = game_state["face_terrain"]
     
     vertex_neighbors = {i: set() for i in range(num_vertices)}
-    
     for f_idx, face in enumerate(faces):
         t = face_terrain[f_idx]
         for v in face:
             vertex_neighbors[v].add(t)
             
     fortresses = {}
-    
     for i in range(num_vertices):
         neighbors = list(vertex_neighbors[i])
         valid_pool = set()
@@ -25,10 +23,7 @@ def initialize_fortresses(game_state):
             options = TERRAIN_BUILD_OPTIONS.get(t, TERRAIN_BUILD_OPTIONS["Default"])
             valid_pool.update(options)
             
-        valid_pool_list = list(valid_pool)
-        if not valid_pool_list:
-            valid_pool_list = ["Keep"]
-
+        valid_pool_list = list(valid_pool) if valid_pool else ["Keep"]
         weighted_options = {}
         total_prob = 0.0
         
@@ -38,14 +33,7 @@ def initialize_fortresses(game_state):
                 weighted_options[ftype] = prob
                 total_prob += prob
                 
-        if total_prob > 0:
-            choice = random.choices(
-                list(weighted_options.keys()), 
-                weights=list(weighted_options.values()), 
-                k=1
-            )[0]
-        else:
-            choice = "Keep"
+        choice = random.choices(list(weighted_options.keys()), weights=list(weighted_options.values()))[0] if total_prob > 0 else "Keep"
 
         fortresses[str(i)] = {
             "id": i, 
@@ -58,38 +46,30 @@ def initialize_fortresses(game_state):
             "paths": [],
             "type": choice,
             "neighbor_terrains": neighbors,
-            "base_stats": {}, 
-            "current_stats": {}
+            "land_type": neighbors[0] if neighbors else "Plain"
         }
-        
     return fortresses
 
 def process_fortress_production(game_state):
     changes_made = False
     from config import FORTRESS_TYPES, TERRAIN_BONUSES
     
-    # O(1) lookup using dominance_cache populated by combat_engine
+    # Use the O(1) dominance cache populated by combat_engine
     dominance = game_state.get("dominance_cache", {})
     
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
         
-        f_type_stats = FORTRESS_TYPES[fort['type']]
-        base_cap = f_type_stats['cap']
-        base_gen = f_type_stats['gen_mult']
-        
-        bonus_cap = 0
-        bonus_gen = 0.0
+        stats = FORTRESS_TYPES[fort['type']]
+        final_cap = stats['cap']
+        final_gen = stats['gen_mult']
         
         for t in fort['neighbor_terrains']:
             if t in TERRAIN_BONUSES:
-                bonus_cap += TERRAIN_BONUSES[t].get("cap", 0)
-                bonus_gen += TERRAIN_BONUSES[t].get("gen_mult", 0.0)
-                
-        final_cap = base_cap + bonus_cap
-        final_gen = base_gen + bonus_gen
+                final_cap += TERRAIN_BONUSES[t].get("cap", 0)
+                final_gen += TERRAIN_BONUSES[t].get("gen_mult", 0.0)
         
-        # Check cached dominance for production bonus
+        # O(1) Lookup
         if dominance.get(fid) == fort['owner']:
             final_gen *= 1.5
             
@@ -103,18 +83,14 @@ def process_fortress_upgrades(game_state):
     changes_made = False
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
-        
         current_tier = fort['tier']
         if current_tier < 3:
             cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
-            
             if fort['units'] >= cost + 10:
                 fort['units'] -= cost
                 fort['tier'] += 1
                 changes_made = True
-
         if len(fort['paths']) > fort['tier']:
             fort['paths'] = fort['paths'][:fort['tier']]
             changes_made = True
-            
     return changes_made
