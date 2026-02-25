@@ -27,6 +27,7 @@ export class InputHandler {
         
         let hoverId = "None";
         let hoverType = "Background";
+        let hoverData = {};
 
         this.renderer.clearHoverHighlight();
 
@@ -38,14 +39,19 @@ export class InputHandler {
             if (fortHit) {
                 hoverId = fortHit.object.parent.userData.id;
                 hoverType = "Fortress";
+                const fort = this.client.getFortress(hoverId);
+                hoverData = { type: fort.type, owner: fort.owner, units: Math.floor(fort.units) };
                 this.renderer.highlightFortressHover(hoverId);
             } else if (pathHit) {
                 hoverId = pathHit.object.userData.pathId;
                 hoverType = "Road";
+                hoverData = { source: pathHit.object.userData.sourceId, target: pathHit.object.userData.targetId };
                 this.renderer.highlightPathHover(hoverId);
             } else if (worldHit) {
                 hoverId = worldHit.faceIndex;
                 hoverType = "Face";
+                const terrain = this.client.gameState.face_terrain ? this.client.gameState.face_terrain[hoverId] : "Unknown";
+                hoverData = { terrain: terrain };
                 this.renderer.highlightFaceHover(hoverId);
             }
         }
@@ -54,7 +60,7 @@ export class InputHandler {
             this.renderer.highlightConnectedPaths(this.selectedSourceId);
         }
 
-        this.ui.updateHoverMonitor(hoverType, hoverId);
+        this.ui.updateHoverMonitor(hoverType, hoverId, hoverData);
     }
 
     onClick(event) {
@@ -84,17 +90,20 @@ export class InputHandler {
         if (!fort) return;
 
         if (this.selectedSourceId === null) {
+            // Select friendly source
             if (fort.owner === this.client.username) {
                 this.selectedSourceId = id;
                 this.ui.showFortressInfo(fort);
                 this.ui.highlightSelection(id, true);
                 this.renderer.highlightConnectedPaths(id);
+            } else {
+                this.ui.showFortressInfo(fort);
             }
         } else {
             if (this.selectedSourceId === id) {
                 this.deselect();
             } else {
-                // Check if target is a neighbor to allow clicking fortress to attack
+                // If a source is selected, clicking another fortress tries to draw a path if neighbor
                 const neighbors = this.client.gameState.adj[this.selectedSourceId] || [];
                 if (neighbors.includes(parseInt(id))) {
                     this.client.sendMove(this.selectedSourceId, id);
@@ -107,20 +116,20 @@ export class InputHandler {
     handlePathClick(pathData) {
         const { sourceId, targetId } = pathData;
 
-        // Toggle path: If selected source matches either side of road
+        // If road clicked and it connects to our current selection, toggle it
         if (this.selectedSourceId !== null) {
             if (sourceId == this.selectedSourceId) {
                 this.client.sendMove(this.selectedSourceId, targetId);
             } else if (targetId == this.selectedSourceId) {
                 this.client.sendMove(this.selectedSourceId, sourceId);
             }
-        } else {
-            this.ui.showPathInfo(sourceId, targetId);
         }
     }
 
     handleFaceClick(faceIdx) {
-        this.ui.showFaceInfo(faceIdx);
+        const terrain = this.client.gameState.face_terrain ? this.client.gameState.face_terrain[faceIdx] : "Plain";
+        const owner = this.client.gameState.sector_owners ? this.client.gameState.sector_owners[faceIdx] : null;
+        this.ui.showFaceInfo(faceIdx, terrain, owner);
         this.renderer.highlightFaceSelection(faceIdx);
     }
 

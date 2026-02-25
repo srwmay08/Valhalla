@@ -130,11 +130,11 @@ export class GameRenderer {
 
     highlightFortressHover(id) {
         if (this.fortressMeshes[id]) {
-            this.fortressMeshes[id].children[1].material.emissive.setHex(0x444400);
+            this.fortressMeshes[id].children[1].material.emissive.setHex(0x666600);
         }
     }
 
-    highlightPathHover(pathId, color = 0x444444) {
+    highlightPathHover(pathId, color = 0x666666) {
         const line = this.pathLines[pathId];
         if (line) {
             line.material.opacity = 1.0;
@@ -142,7 +142,7 @@ export class GameRenderer {
         }
     }
 
-    highlightConnectedPaths(sourceId, color = 0x444444) {
+    highlightConnectedPaths(sourceId, color = 0x333333) {
         const prefix = `path_${sourceId}_`;
         Object.keys(this.pathLines).forEach(key => {
             if (key.startsWith(prefix)) {
@@ -315,13 +315,11 @@ export class GameRenderer {
             
             label.element.style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
             
-            // Horizon Occlusion: Dot product between label position and camera normalized direction
+            // Check visibility relative to camera direction to hide labels behind the planet
             const dot = label.pos.clone().normalize().dot(this.camera.position.clone().normalize());
-            
-            // Fade out when behind the sphere horizon
-            if (dot > 0.4) {
+            if (dot > 0.45) {
+                label.element.style.opacity = Math.min(1, (dot - 0.45) * 10);
                 label.element.style.display = 'block';
-                label.element.style.opacity = Math.min(1, (dot - 0.4) * 5);
                 label.element.style.zIndex = Math.floor(dot * 100);
             } else {
                 label.element.style.display = 'none';
