@@ -314,9 +314,18 @@ export class GameRenderer {
             const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
             
             label.element.style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
+            
+            // Horizon Occlusion: Dot product between label position and camera normalized direction
             const dot = label.pos.clone().normalize().dot(this.camera.position.clone().normalize());
-            label.element.style.opacity = dot > 0.4 ? 1 : 0;
-            label.element.style.zIndex = Math.floor(dot * 100);
+            
+            // Fade out when behind the sphere horizon
+            if (dot > 0.4) {
+                label.element.style.display = 'block';
+                label.element.style.opacity = Math.min(1, (dot - 0.4) * 5);
+                label.element.style.zIndex = Math.floor(dot * 100);
+            } else {
+                label.element.style.display = 'none';
+            }
         });
 
         this.renderer.render(this.scene, this.camera);

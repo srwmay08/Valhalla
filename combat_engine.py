@@ -32,7 +32,7 @@ def process_sector_dominance(game_state):
     changes_made = False
     face_ownership = {}
     current_sanctuaries = game_state.get("sanctuaries", {})
-    dominance_cache = {} # Map fortress ID to dominant owner
+    dominance_cache = {} 
     
     for idx, face in enumerate(game_state["faces"]):
         face_id = str(idx)
@@ -48,7 +48,6 @@ def process_sector_dominance(game_state):
         if o1 and o1 == o2 and o2 == o3:
             owner = o1
             face_ownership[face_id] = owner
-            # Cache dominance for the production loop
             dominance_cache[v1] = owner
             dominance_cache[v2] = owner
             dominance_cache[v3] = owner
@@ -117,8 +116,10 @@ def process_special_spawns(game_state):
 def process_combat_flows(game_state):
     changes_made = False
     edges = game_state.get("edges", {})
+    
     if process_special_spawns(game_state):
         changes_made = True
+        
     for fid, fort in game_state["fortresses"].items():
         if not fort['paths'] or not fort['owner']: continue
         spawn_amount = FLOW_RATE 
@@ -139,37 +140,74 @@ def process_combat_flows(game_state):
                     }
                     edges[edge_key]["packets"].append(new_packet)
                     changes_made = True
+                    
     for key, edge in edges.items():
         if not edge["packets"]: continue
+        
         has_mage_fwd = any(p["unit_class"] == "Mage" and p["direction"] == 1 for p in edge["packets"])
         has_mage_rev = any(p["unit_class"] == "Mage" and p["direction"] == -1 for p in edge["packets"])
+        
         edge["packets"].sort(key=lambda p: p["pos"])
+        
+        # Determine Clash Point
+        forward_flow = [p for p in edge["packets"] if p["direction"] == 1]
+        reverse_flow = [p for p in edge["packets"] if p["direction"] == -1]
+        
+        clash_point = edge.get("battle_point", 0.5)
+        
+        if forward_flow and reverse_flow:
+            # If flows are from different factions, they move toward each other
+            if forward_flow[-1]["owner"] != reverse_flow[0]["owner"]:
+                fwd_power = sum(p["amount"] for p in forward_flow)
+                rev_power = sum(p["amount"] for p in reverse_flow)
+                total_power = fwd_power + rev_power
+                
+                # Update visual battle point based on relative strength
+                if total_power > 0:
+                    target_clash = fwd_power / total_power
+                    # Ease the battle point toward the new strength ratio
+                    clash_point += (target_clash - clash_point) * 0.1
+                    edge["battle_point"] = clash_point
+            else:
+                # Same faction, flows pass each other or merge (here we let them pass)
+                pass
+
         active_packets = []
         for p in edge["packets"]:
             mage_mult = 1.25 if ((p["direction"] == 1 and has_mage_fwd) or (p["direction"] == -1 and has_mage_rev)) else 1.0
             p["current_buff"] = mage_mult
+            
             speed = PACKET_SPEED
             if p.get("is_special"):
                 s_type = p["type"]
                 if s_type in SPECIAL_UNITS:
                     speed *= SPECIAL_UNITS[s_type]["speed"]
-            p["pos"] += p["direction"] * speed
+            
+            # Packets move but are clamped by the clash point if an enemy is present
+            if forward_flow and reverse_flow and forward_flow[-1]["owner"] != reverse_flow[0]["owner"]:
+                if p["direction"] == 1:
+                    p["pos"] = min(clash_point, p["pos"] + speed)
+                else:
+                    p["pos"] = max(clash_point, p["pos"] - speed)
+            else:
+                p["pos"] += p["direction"] * speed
+                
             p["pos"] = max(0.0, min(1.0, p["pos"]))
             active_packets.append(p)
-        forward_flow = [p for p in active_packets if p["direction"] == 1] 
-        reverse_flow = [p for p in active_packets if p["direction"] == -1] 
+            
+        # Collision Resolution at Clash Point
         if forward_flow and reverse_flow:
-            lead_fwd, lead_rev = forward_flow[-1], reverse_flow[0]
-            if lead_fwd["pos"] >= lead_rev["pos"]:
-                clash_pos = (lead_fwd["pos"] + lead_rev["pos"]) / 2.0
-                edge["battle_point"] = clash_pos 
+            lead_fwd = forward_flow[-1]
+            lead_rev = reverse_flow[0]
+            if lead_fwd["owner"] != lead_rev["owner"] and abs(lead_fwd["pos"] - lead_rev["pos"]) < COLLISION_THRESHOLD:
                 dmg_fwd = calculate_packet_damage(lead_fwd, lead_rev, game_state, True)
                 dmg_rev = calculate_packet_damage(lead_rev, lead_fwd, game_state, True)
                 lead_fwd["amount"] -= dmg_rev
                 lead_rev["amount"] -= dmg_fwd
-                lead_fwd["pos"], lead_rev["pos"] = clash_pos, clash_pos
                 changes_made = True
+                
         edge["packets"] = [p for p in active_packets if p["amount"] > 0]
+        
     for key, edge in edges.items():
         surviving_packets = []
         for p in edge["packets"]:
@@ -178,6 +216,7 @@ def process_combat_flows(game_state):
                 target_id, arrived = str(edge["v"]), True
             elif p["direction"] == -1 and p["pos"] <= 0.0:
                 target_id, arrived = str(edge["u"]), True
+                
             if arrived and target_id:
                 if p.get("unit_class") == "Hero" and p.get("patrol_face") is not None:
                     redirect_hero(p, target_id, game_state)
@@ -190,6 +229,7 @@ def process_combat_flows(game_state):
             else:
                 surviving_packets.append(p)
         edge["packets"] = surviving_packets
+        
     return changes_made
 
 def redirect_hero(packet, current_node_id, game_state):
