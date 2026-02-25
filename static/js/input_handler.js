@@ -5,11 +5,9 @@ export class InputHandler {
         this.renderer = renderer;
         this.client = gameClient;
         this.ui = uiManager;
-        
         this.raycaster = new THREE.Raycaster();
         this.raycaster.params.Line.threshold = 0.02; 
         this.mouse = new THREE.Vector2();
-        
         this.selectedSourceId = null;
         this.initListeners();
     }
@@ -22,39 +20,25 @@ export class InputHandler {
     onMouseMove(event) {
         this.updateMouseCoords(event);
         this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
-
         const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
-        
-        let hoverId = "None";
-        let hoverType = "Background";
-
+        let hoverId = "None", hoverType = "Background";
         this.renderer.clearHoverHighlight();
-
         if (intersects.length > 0) {
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
             const pathHit = intersects.find(h => h.object.userData?.type === 'path');
             const worldHit = intersects.find(h => h.object.userData?.type === 'world');
-
             if (fortHit) {
-                hoverId = fortHit.object.parent.userData.id;
-                hoverType = "Fortress";
+                hoverId = fortHit.object.parent.userData.id; hoverType = "Fortress";
                 this.renderer.highlightFortressHover(hoverId);
             } else if (pathHit) {
-                hoverId = pathHit.object.userData.pathId;
-                hoverType = "Road";
+                hoverId = pathHit.object.userData.pathId; hoverType = "Road";
                 this.renderer.highlightPathHover(hoverId, 0xffffff);
             } else if (worldHit) {
-                hoverId = worldHit.faceIndex;
-                hoverType = "Face";
+                hoverId = worldHit.faceIndex; hoverType = "Face";
                 this.renderer.highlightFaceHover(hoverId);
             }
         }
-
-        // Keep active selection highlights visible
-        if (this.selectedSourceId !== null) {
-            this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
-        }
-
+        if (this.selectedSourceId !== null) this.renderer.highlightConnectedPaths(this.selectedSourceId, 0xffffff);
         this.ui.updateHoverMonitor(hoverType, hoverId);
     }
 
@@ -62,19 +46,13 @@ export class InputHandler {
         this.updateMouseCoords(event);
         this.raycaster.setFromCamera(this.mouse, this.renderer.camera);
         const intersects = this.raycaster.intersectObjects(this.renderer.scene.children, true);
-
         if (intersects.length > 0) {
             const fortHit = intersects.find(h => h.object.parent && h.object.parent.userData?.type === 'fortress');
             const pathHit = intersects.find(h => h.object.userData?.type === 'path');
             const worldHit = intersects.find(h => h.object.userData?.type === 'world');
-
-            if (fortHit) {
-                this.handleFortressClick(fortHit.object.parent.userData.id);
-            } else if (pathHit) {
-                this.handlePathClick(pathHit.object.userData);
-            } else if (worldHit) {
-                this.handleFaceClick(worldHit.faceIndex);
-            }
+            if (fortHit) this.handleFortressClick(fortHit.object.parent.userData.id);
+            else if (pathHit) this.handlePathClick(pathHit.object.userData);
+            else if (worldHit) this.handleFaceClick(worldHit.faceIndex);
         } else {
             this.deselect();
         }
@@ -83,7 +61,6 @@ export class InputHandler {
     handleFortressClick(id) {
         const fort = this.client.getFortress(id);
         if (!fort) return;
-
         if (this.selectedSourceId === null) {
             if (fort.owner === this.client.username) {
                 this.selectedSourceId = id;
@@ -92,28 +69,18 @@ export class InputHandler {
                 this.renderer.highlightConnectedPaths(id, 0xffffff);
             }
         } else {
-            // Clicking own fortress while selected deselects it
-            if (this.selectedSourceId === id) {
-                this.deselect();
-            } else {
-                // Clicking another fortress shows its info but keeps current source
-                this.ui.showFortressInfo(fort);
-            }
+            if (this.selectedSourceId === id) this.deselect();
+            else this.ui.showFortressInfo(fort);
         }
     }
 
     handlePathClick(pathData) {
-        const { sourceId, targetId, pathId } = pathData;
-
-        // If a source is selected and this road connects to it, send attack
-        if (this.selectedSourceId !== null && sourceId == this.selectedSourceId) {
-            this.client.sendMove(this.selectedSourceId, targetId);
+        const { sourceId, targetId } = pathData;
+        if (this.selectedSourceId !== null && (sourceId == this.selectedSourceId || targetId == this.selectedSourceId)) {
+            const finalTarget = (sourceId == this.selectedSourceId) ? targetId : sourceId;
+            this.client.sendMove(this.selectedSourceId, finalTarget);
         } else {
-            // Otherwise show path info or cancel existing if logic permits
             this.ui.showPathInfo(sourceId, targetId);
-            // Example: To "cancel" an attack path, you'd send a move with 0 flow or similar
-            // For now, simple interaction:
-            console.log("Road Interaction:", pathId);
         }
     }
 
@@ -128,12 +95,7 @@ export class InputHandler {
     }
 
     deselect() {
-        if (this.selectedSourceId !== null) {
-            this.ui.highlightSelection(this.selectedSourceId, false);
-            this.selectedSourceId = null;
-        }
-        this.renderer.clearSelectionHighlights();
-        this.renderer.clearHoverHighlight();
-        this.ui.hideInfo();
+        if (this.selectedSourceId !== null) { this.ui.highlightSelection(this.selectedSourceId, false); this.selectedSourceId = null; }
+        this.renderer.clearSelectionHighlights(); this.renderer.clearHoverHighlight(); this.ui.hideInfo();
     }
 }

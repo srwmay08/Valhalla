@@ -21,7 +21,6 @@ from config import (
 )
 
 # --- Configuration Overrides ---
-# Ensuring strict alignment with user request: Player is Red, NPC 1 is Green
 RACES["Human"]["color"] = 0xff0000
 RACES["Orc"]["color"] = 0x00ff00
 
@@ -48,7 +47,8 @@ game_state = {
     "adj": {},
     "roads": [],
     "fortresses": {},
-    "sector_owners": {}
+    "sector_owners": {},
+    "dominance_cache": {} # Optimized O(1) lookup for fortresses
 }
 
 # --- User Class ---
@@ -84,30 +84,32 @@ def load_user(user_id):
 def background_thread():
     while True:
         socketio.sleep(TICK_RATE)
-        if not game_state["initialized"]:
-            continue
-            
-        map_changed = False
-        color_changed = False
-
-        # 1. Sector Dominance
-        if combat_engine.process_sector_dominance(game_state):
-            color_changed = True
-
-        # 2. AI Logic
-        process_ai_turn(game_state)
         
-        # 3. Fortress Production (Growth)
-        if fortress_engine.process_fortress_production(game_state):
-            map_changed = True
+        with thread_lock:
+            if not game_state["initialized"]:
+                continue
+                
+            map_changed = False
+            color_changed = False
+
+            # 1. Sector Dominance (Updates dominance_cache)
+            if combat_engine.process_sector_dominance(game_state):
+                color_changed = True
+
+            # 2. AI Logic
+            process_ai_turn(game_state)
             
-        # 4. Fortress Upgrades
-        if fortress_engine.process_fortress_upgrades(game_state):
-            map_changed = True
-            
-        # 5. Combat / Attack Paths
-        if combat_engine.process_combat_flows(game_state):
-            map_changed = True
+            # 3. Fortress Production (Growth)
+            if fortress_engine.process_fortress_production(game_state):
+                map_changed = True
+                
+            # 4. Fortress Upgrades
+            if fortress_engine.process_fortress_upgrades(game_state):
+                map_changed = True
+                
+            # 5. Combat / Attack Paths
+            if combat_engine.process_combat_flows(game_state):
+                map_changed = True
 
         # --- Broadcast Updates ---
         if color_changed:
@@ -193,27 +195,28 @@ def create_app():
 
     @app.route('/api/gamestate')
     def get_gamestate_api():
-        if not game_state["initialized"]: 
-            print("[SERVER] Initializing world for the first time...")
-            world_data = world_engine.generate_game_world()
-            game_state.update(world_data)
-            game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
-            game_state["initialized"] = True
+        with thread_lock:
+            if not game_state["initialized"]: 
+                print("[SERVER] Initializing world for the first time...")
+                world_data = world_engine.generate_game_world()
+                game_state.update(world_data)
+                game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
+                game_state["initialized"] = True
             
-        print(f"[SERVER DEBUG] API GameState requested by {current_user.username if current_user.is_authenticated else 'Anonymous'}")
-        
-        from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
-        return jsonify({
-            "vertices": game_state["vertices"],
-            "faces": game_state["faces"],
-            "face_colors": game_state["face_colors"],
-            "roads": game_state["roads"],
-            "fortresses": game_state["fortresses"],
-            "adj": game_state["adj"],
-            "races": RACES,
-            "fortress_types": FORTRESS_TYPES,
-            "terrain_build_options": TERRAIN_BUILD_OPTIONS
-        })
+            print(f"[SERVER DEBUG] API GameState requested by {current_user.username if current_user.is_authenticated else 'Anonymous'}")
+            
+            from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
+            return jsonify({
+                "vertices": game_state["vertices"],
+                "faces": game_state["faces"],
+                "face_colors": game_state["face_colors"],
+                "roads": game_state["roads"],
+                "fortresses": game_state["fortresses"],
+                "adj": game_state["adj"],
+                "races": RACES,
+                "fortress_types": FORTRESS_TYPES,
+                "terrain_build_options": TERRAIN_BUILD_OPTIONS
+            })
 
     @socketio.on('connect')
     def handle_connect():
@@ -221,34 +224,34 @@ def create_app():
         with thread_lock:
             if thread is None:
                 thread = socketio.start_background_task(background_thread)
-        if current_user.is_authenticated:
-            print(f"[SERVER DEBUG] Client Connected: {current_user.username}")
-            emit('update_face_colors', game_state["face_colors"])
-            emit('update_map', game_state["fortresses"])
-            assign_home_sector(current_user)
+            if current_user.is_authenticated:
+                print(f"[SERVER DEBUG] Client Connected: {current_user.username}")
+                emit('update_face_colors', game_state["face_colors"])
+                emit('update_map', game_state["fortresses"])
+                assign_home_sector(current_user)
 
     @socketio.on('restart_game')
     @login_required
     def handle_restart():
-        print(f"[SERVER] Game Restart triggered by {current_user.username}")
-        world_data = world_engine.generate_game_world()
-        game_state.update(world_data)
-        game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
-        game_state["sector_owners"] = {}
-        
-        assign_home_sector(current_user)
-        emit('update_map', game_state["fortresses"], broadcast=True)
-        emit('update_face_colors', game_state["face_colors"], broadcast=True)
+        with thread_lock:
+            print(f"[SERVER] Game Restart triggered by {current_user.username}")
+            world_data = world_engine.generate_game_world()
+            game_state.update(world_data)
+            game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
+            game_state["sector_owners"] = {}
+            game_state["dominance_cache"] = {}
+            
+            assign_home_sector(current_user)
+            emit('update_map', game_state["fortresses"], broadcast=True)
+            emit('update_face_colors', game_state["face_colors"], broadcast=True)
 
     def assign_home_sector(user):
-        """Assigns a sector and logs detailed coordinate/ownership data for debugging."""
         spawn_ai_sector()
         
         existing_forts = [f for f in game_state["fortresses"].values() if f['owner'] == user.username]
         if existing_forts:
             vid = int(existing_forts[0]['id'])
             v_pos = game_state["vertices"][vid]
-            print(f"[DEBUG] User {user.username} already has territory. Focusing camera at {v_pos}")
             emit('focus_camera', {'position': v_pos})
             return 
         
@@ -273,13 +276,10 @@ def create_app():
                 if f1['owner'] or f2['owner'] or f3['owner']:
                     continue
 
-                # Player assignment (RED)
                 race_color = RACES["Human"]["color"]
                 game_state["face_colors"][i] = world_engine.darken_color(race_color, factor=0.4)
                 
                 units_per_base = STARTING_UNITS_POOL // 3
-                print(f"[DEBUG] Assigning Home Sector {i} to {user.username} (Color: RED)")
-                
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
                         "owner": user.username,
@@ -312,7 +312,6 @@ def create_app():
         emit('update_map', game_state["fortresses"], broadcast=True)
 
     def spawn_ai_sector():
-        """Spawns NPC sector (GREEN/Gorgon)."""
         for f in game_state["fortresses"].values():
             if f['owner'] == AI_NAME:
                 return
@@ -337,8 +336,6 @@ def create_app():
                 ai_color = RACES["Orc"]["color"]
                 game_state["face_colors"][i] = world_engine.darken_color(ai_color, factor=0.4)
                 
-                print(f"[DEBUG] Spawning NPC {AI_NAME} (Color: GREEN) at Sector {i}")
-                
                 units_per_base = STARTING_UNITS_POOL // 3
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
@@ -357,49 +354,44 @@ def create_app():
     @socketio.on('submit_move')
     @login_required
     def handle_move(data):
-        src_id = str(data.get('source'))
-        tgt_id = str(data.get('target'))
-        if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]:
-            return
-        src_fort = game_state["fortresses"][src_id]
-        if src_fort['owner'] != current_user.username:
-            return
-        if src_fort.get('disabled'):
-            return
-        
-        if int(tgt_id) not in game_state["adj"].get(int(src_id), []):
-            return
+        with thread_lock:
+            src_id = str(data.get('source'))
+            tgt_id = str(data.get('target'))
+            if src_id not in game_state["fortresses"] or tgt_id not in game_state["fortresses"]:
+                return
+            src_fort = game_state["fortresses"][src_id]
+            if src_fort['owner'] != current_user.username:
+                return
+            
+            if int(tgt_id) not in game_state["adj"].get(int(src_id), []):
+                return
 
-        print(f"[DEBUG] Move Order: {current_user.username} from {src_id} to {tgt_id}")
-
-        if tgt_id in src_fort['paths']:
-            src_fort['paths'].remove(tgt_id)
-        else:
-            if len(src_fort['paths']) < src_fort['tier']:
-                src_fort['paths'].append(tgt_id)
-        
-        emit('update_map', game_state["fortresses"], broadcast=True)
+            if tgt_id in src_fort['paths']:
+                src_fort['paths'].remove(tgt_id)
+            else:
+                if len(src_fort['paths']) < src_fort['tier']:
+                    src_fort['paths'].append(tgt_id)
+            
+            emit('update_map', game_state["fortresses"], broadcast=True)
 
     @socketio.on('specialize_fortress')
     @login_required
     def handle_specialize(data):
-        fid = str(data.get('id'))
-        new_type = data.get('type')
-        
-        if fid not in game_state["fortresses"]:
-            return
-        fort = game_state["fortresses"][fid]
-        
-        if fort['owner'] != current_user.username:
-            return
-        
-        land_type = fort.get('land_type', 'Plain')
-        allowed = TERRAIN_BUILD_OPTIONS.get(land_type, TERRAIN_BUILD_OPTIONS['Default'])
-        
-        if new_type in allowed and new_type in FORTRESS_TYPES:
-            print(f"[DEBUG] Specializing {fid} to {new_type}")
-            fort['type'] = new_type
-            emit('update_map', game_state["fortresses"], broadcast=True)
+        with thread_lock:
+            fid = str(data.get('id'))
+            new_type = data.get('type')
+            if fid not in game_state["fortresses"]:
+                return
+            fort = game_state["fortresses"][fid]
+            if fort['owner'] != current_user.username:
+                return
+            
+            land_type = fort.get('land_type', 'Plain')
+            allowed = TERRAIN_BUILD_OPTIONS.get(land_type, TERRAIN_BUILD_OPTIONS['Default'])
+            
+            if new_type in allowed and new_type in FORTRESS_TYPES:
+                fort['type'] = new_type
+                emit('update_map', game_state["fortresses"], broadcast=True)
 
     return app
 

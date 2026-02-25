@@ -5,20 +5,10 @@ from config import (
 )
 
 def initialize_fortresses(game_state):
-    """
-    Creates the initial state for all fortresses (Vertices).
-    Phase 2 Logic: 
-    - Vertices are now defined by the 3 faces they touch (Intersection Nodes).
-    - Structure options are a union of options from all neighbors.
-    """
     num_vertices = len(game_state["vertices"])
     faces = game_state["faces"]
     face_terrain = game_state["face_terrain"]
     
-    # 1. Map Vertices to Neighboring Terrains
-    # Each vertex touches 3 faces in a dual-mesh, though 
-    # implementation might vary slightly with subdivisions.
-    # We iterate faces and assign them to their vertices.
     vertex_neighbors = {i: set() for i in range(num_vertices)}
     
     for f_idx, face in enumerate(faces):
@@ -30,29 +20,19 @@ def initialize_fortresses(game_state):
     
     for i in range(num_vertices):
         neighbors = list(vertex_neighbors[i])
-        
-        # 2. Build Structure Pool (Intersection Logic)
-        # Valid structures are the UNION of valid structures for all neighbors.
-        # e.g., Mountain + Farm = can build Mine OR Barn.
         valid_pool = set()
         for t in neighbors:
             options = TERRAIN_BUILD_OPTIONS.get(t, TERRAIN_BUILD_OPTIONS["Default"])
             valid_pool.update(options)
             
-        # Convert back to list for selection
         valid_pool_list = list(valid_pool)
-        
-        # Fallback
         if not valid_pool_list:
             valid_pool_list = ["Keep"]
 
-        # 3. Select Type (Weighted Probability)
-        # We must filter the global probabilities by our valid pool
         weighted_options = {}
         total_prob = 0.0
         
         for ftype in valid_pool_list:
-            # Check if type exists in config
             if ftype in FORTRESS_TYPES:
                 prob = FORTRESS_TYPES[ftype]["prob"]
                 weighted_options[ftype] = prob
@@ -77,38 +57,27 @@ def initialize_fortresses(game_state):
             "tier": 1, 
             "paths": [],
             "type": choice,
-            "neighbor_terrains": neighbors, # Store for "Land Touch" bonuses
-            "base_stats": {}, # Placeholder for dynamic calc
-            "current_stats": {} # Placeholder for dynamic calc
+            "neighbor_terrains": neighbors,
+            "base_stats": {}, 
+            "current_stats": {}
         }
         
     return fortresses
 
 def process_fortress_production(game_state):
-    """
-    Handles unit generation for all fortresses.
-    Phase 1 "Firehose" + Phase 2 Dynamic Stats.
-    """
     changes_made = False
-    
-    # We need to import the calculator from combat_engine 
-    # OR replicate the logic. Ideally, stats are calculated once/cached,
-    # but for safety let's assume we pull from a helper or recalc.
-    # To avoid circular imports, we'll do a simple lookup here or
-    # rely on combat_engine to update stats? 
-    # For now, let's just use the raw config + neighbors here for Gen Rate.
-    
     from config import FORTRESS_TYPES, TERRAIN_BONUSES
+    
+    # O(1) lookup using dominance_cache populated by combat_engine
+    dominance = game_state.get("dominance_cache", {})
     
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
         
-        # Base Stats
         f_type_stats = FORTRESS_TYPES[fort['type']]
         base_cap = f_type_stats['cap']
         base_gen = f_type_stats['gen_mult']
         
-        # Apply Land Touch Bonuses (Gen & Cap)
         bonus_cap = 0
         bonus_gen = 0.0
         
@@ -120,19 +89,8 @@ def process_fortress_production(game_state):
         final_cap = base_cap + bonus_cap
         final_gen = base_gen + bonus_gen
         
-        # Dominance Bonus (Face control)
-        # Check if this fortress touches a face that is fully owned
-        has_dominance_bonus = False
-        # (This check requires iterating faces, which is expensive. 
-        # Optimized approach: `process_sector_dominance` should flag fortresses)
-        # For now, sticking to the Phase 1 logic:
-        for f_idx, face in enumerate(game_state["faces"]):
-            if int(fid) in face:
-                if game_state["sector_owners"].get(str(f_idx)) == fort['owner']:
-                    has_dominance_bonus = True
-                    break
-        
-        if has_dominance_bonus:
+        # Check cached dominance for production bonus
+        if dominance.get(fid) == fort['owner']:
             final_gen *= 1.5
             
         if fort['units'] < final_cap:
@@ -142,7 +100,6 @@ def process_fortress_production(game_state):
     return changes_made
 
 def process_fortress_upgrades(game_state):
-    """Handles automatic upgrading logic."""
     changes_made = False
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue

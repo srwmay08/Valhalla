@@ -8,7 +8,6 @@ from config import (
 )
 
 def darken_color(hex_color, factor=0.4):
-    """Helper to dim colors for owned sectors."""
     r = (hex_color >> 16) & 0xFF
     g = (hex_color >> 8) & 0xFF
     b = hex_color & 0xFF
@@ -101,7 +100,6 @@ def grow_body(start_node, target_size, occupied_tiles, neighbors_map):
     return body
 
 def generate_game_world():
-    """Generates geometry, terrain, and graph connections."""
     vertices, faces = create_ico_sphere(ICO_SUBDIVISIONS)
     adj_raw, roads_list = build_graph_from_mesh(vertices, faces)
     roads = set(roads_list)
@@ -112,7 +110,6 @@ def generate_game_world():
     available = set(range(num_faces))
     ocean_tiles = set()
     
-    # 1. Generate Oceans
     if SURFACE_OCEANS > 0:
         total_ocean_percent = random.uniform(MIN_SURFACE_DEEP_SEA_PERCENT, MAX_SURFACE_DEEP_SEA_PERCENT)
         total_ocean_target = int(total_ocean_percent * num_faces)
@@ -127,7 +124,6 @@ def generate_game_world():
             
     for i in ocean_tiles: face_terrain[i] = "Deep Sea"
     
-    # 2. Cleanup Islands
     land_indices = [i for i, t in enumerate(face_terrain) if t != "Deep Sea"]
     land_set = set(land_indices)
     
@@ -151,7 +147,6 @@ def generate_game_world():
             for small_comp in components[1:]:
                 for idx in small_comp: face_terrain[idx] = "Deep Sea"; ocean_tiles.add(idx)
     
-    # 3. Coastlines (Sea)
     final_ocean_tiles = {i for i, t in enumerate(face_terrain) if t == "Deep Sea"}
     sea_tiles = set()
     for i in final_ocean_tiles:
@@ -159,7 +154,6 @@ def generate_game_world():
             if face_terrain[n] != "Deep Sea": sea_tiles.add(n)
     for i in sea_tiles: face_terrain[i] = "Sea"
     
-    # 4. Biomes
     available_land = [i for i, t in enumerate(face_terrain) if t == "Plain"]
     for i in available_land:
         r = random.random()
@@ -196,7 +190,6 @@ def generate_game_world():
         is_near_plain = any(face_terrain[n] == "Plain" for n in face_neighbors[i])
         if is_near_plain and random.random() < SPAWN_CHANCE_FARM: face_terrain[i] = "Farm"
 
-    # 5. Filter Roads (ONLY remove if ALL adjacent faces are water)
     edge_to_faces = {}
     for face_idx, face in enumerate(faces):
         f_edges = [
@@ -213,7 +206,7 @@ def generate_game_world():
     lava_edges = set()
 
     for e, f_indices in edge_to_faces.items():
-        # Check if ALL touching faces are water
+        # Coastline logic: A road is only invalid if ALL adjacent faces are water
         all_water = True
         for f_idx in f_indices:
             t = face_terrain[f_idx]
@@ -225,13 +218,6 @@ def generate_game_world():
             invalid_edges.add(e)
             continue 
 
-        # Hazard check
-        if len(f_indices) == 2:
-            t1 = face_terrain[f_indices[0]]
-            t2 = face_terrain[f_indices[1]]
-            if t1 == "Lava" and t2 == "Lava":
-                lava_edges.add(e)
-    
     valid_roads = roads - invalid_edges
     
     new_adj = {i: set() for i in range(len(vertices))}
@@ -245,14 +231,13 @@ def generate_game_world():
     for u, v in valid_roads:
         key_tuple = tuple(sorted((u, v)))
         key_str = str(key_tuple)
-        is_hazard = key_tuple in lava_edges
         edges_data[key_str] = {
             "u": u,
             "v": v,
             "packets": [],      
             "battle_point": 0.5, 
             "contested": False,
-            "hazard": is_hazard 
+            "hazard": False 
         }
 
     return {
@@ -263,5 +248,6 @@ def generate_game_world():
         "adj": {k: list(v) for k, v in new_adj.items()},
         "roads": list(valid_roads),
         "edges": edges_data,
-        "sanctuaries": {}
+        "sanctuaries": {},
+        "dominance_cache": {}
     }
