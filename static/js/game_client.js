@@ -67,13 +67,25 @@ export class GameClient {
             if (this.callbacks.onMapUpdate) {
                 this.callbacks.onMapUpdate(fortresses);
             }
+            // Fire refresh event to dynamically update the UI info panel
+            document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
         });
 
-        this.socket.on('update_face_colors', (colors) => {
+        this.socket.on('update_face_colors', (payload) => {
             console.log("[CLIENT DEBUG] update_face_colors received.");
+            
+            // Extract the combined payload
+            let colors = payload;
+            if (payload && payload.colors) {
+                colors = payload.colors;
+                this.gameState.sector_owners = payload.owners;
+            }
+            
             if (this.callbacks.onColorUpdate) {
                 this.callbacks.onColorUpdate(colors, this.gameState.sector_owners, this.username);
             }
+            // Fire refresh event to dynamically update the UI info panel
+            document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
         });
         
         this.socket.on('focus_camera', (data) => {

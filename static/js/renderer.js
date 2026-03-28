@@ -6,7 +6,7 @@ export class GameRenderer {
         this.container = document.getElementById(containerId);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         
         this.controls = null;
         this.sphereMesh = null;
@@ -28,7 +28,17 @@ export class GameRenderer {
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.container.appendChild(this.renderer.domElement);
+        
+        this.renderer.domElement.style.position = 'absolute';
+        this.renderer.domElement.style.top = '0';
+        this.renderer.domElement.style.left = '0';
+        this.renderer.domElement.style.zIndex = '1';
+        
+        if (this.container) {
+            this.container.style.position = 'relative';
+            this.container.style.overflow = 'hidden';
+            this.container.appendChild(this.renderer.domElement);
+        }
         
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
@@ -96,7 +106,9 @@ export class GameRenderer {
     initFortressVisuals(vertices) {
         Object.values(this.fortressMeshes).forEach(m => this.scene.remove(m));
         this.fortressMeshes = {};
-        this.labels.forEach(l => l.element.remove());
+        this.labels.forEach(l => {
+            if (l && l.element) l.element.remove();
+        });
         this.labels = [];
 
         vertices.forEach((v, idx) => {
@@ -122,9 +134,11 @@ export class GameRenderer {
             label.className = 'fortress-label';
             label.style.position = 'absolute';
             label.style.pointerEvents = 'none';
-            label.innerHTML = `<div class="unit-count">0</div><div class="tier-dots"><span></span><span></span><span></span></div>`;
+            label.style.zIndex = '10';
+            label.innerHTML = `<div class="unit-count">0</div><div class="tier-dots"></div>`;
             this.container.appendChild(label);
-            this.labels[idx] = { element: label, pos: new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(1.15) };
+            // Lowered from 1.15 to 1.08 to bring it closer to the planet surface
+            this.labels[idx] = { element: label, pos: new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(1.08) };
         });
     }
 
@@ -163,7 +177,11 @@ export class GameRenderer {
     }
 
     clearHoverHighlight() {
-        Object.values(this.fortressMeshes).forEach(g => g.children[1].material.emissive.setHex(0));
+        Object.values(this.fortressMeshes).forEach(g => {
+            if (g.children[1] && g.children[1].material) {
+                g.children[1].material.emissive.setHex(0);
+            }
+        });
         Object.values(this.pathLines).forEach(l => {
             l.material.opacity = 0.6;
             l.material.emissive.setHex(0);
@@ -222,10 +240,23 @@ export class GameRenderer {
             const label = this.labels[fort.id];
             if (label) {
                 label.element.querySelector('.unit-count').innerText = Math.floor(fort.units);
-                const dots = label.element.querySelectorAll('.tier-dots span');
-                dots.forEach((dot, i) => {
-                    dot.style.background = (i < fort.tier) ? '#ffffff' : '#444444';
-                });
+                const tierContainer = label.element.querySelector('.tier-dots');
+                
+                // Clear and rebuild dots based on tier and active paths
+                tierContainer.innerHTML = '';
+                const activePathsCount = fort.paths ? fort.paths.length : 0;
+
+                for (let i = 0; i < fort.tier; i++) {
+                    const dot = document.createElement('span');
+                    // White if index is beyond active paths (available), Gray if within (in use)
+                    dot.style.background = (i < activePathsCount) ? '#888888' : '#ffffff';
+                    dot.style.display = 'inline-block';
+                    dot.style.width = '6px';
+                    dot.style.height = '6px';
+                    dot.style.borderRadius = '50%';
+                    dot.style.margin = '0 2px';
+                    tierContainer.appendChild(dot);
+                }
             }
         });
     }
@@ -315,12 +346,11 @@ export class GameRenderer {
             
             label.element.style.transform = `translate(-50%, -50%) translate(${x}px,${y}px)`;
             
-            // Check visibility relative to camera direction to hide labels behind the planet
             const dot = label.pos.clone().normalize().dot(this.camera.position.clone().normalize());
             if (dot > 0.45) {
                 label.element.style.opacity = Math.min(1, (dot - 0.45) * 10);
                 label.element.style.display = 'block';
-                label.element.style.zIndex = Math.floor(dot * 100);
+                label.element.style.zIndex = Math.floor(dot * 100) + 10;
             } else {
                 label.element.style.display = 'none';
             }

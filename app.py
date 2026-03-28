@@ -114,7 +114,10 @@ def background_thread():
 
         # Broadcast Updates outside of lock to prevent blocking
         if color_changed:
-            socketio.emit('update_face_colors', game_state["face_colors"])
+            socketio.emit('update_face_colors', {
+                "colors": game_state["face_colors"],
+                "owners": game_state["sector_owners"]
+            })
         
         if map_changed:
             socketio.emit('update_map', game_state["fortresses"])
@@ -209,6 +212,7 @@ def create_app():
                 "vertices": game_state["vertices"],
                 "faces": game_state["faces"],
                 "face_colors": game_state["face_colors"],
+                "sector_owners": game_state.get("sector_owners", {}),
                 "roads": game_state["roads"],
                 "fortresses": game_state["fortresses"],
                 "adj": game_state["adj"],
@@ -224,7 +228,10 @@ def create_app():
             if thread is None:
                 thread = socketio.start_background_task(background_thread)
         if current_user.is_authenticated:
-            emit('update_face_colors', game_state["face_colors"])
+            emit('update_face_colors', {
+                "colors": game_state["face_colors"],
+                "owners": game_state["sector_owners"]
+            })
             emit('update_map', game_state["fortresses"])
             assign_home_sector(current_user)
 
@@ -240,7 +247,10 @@ def create_app():
             
             assign_home_sector(current_user)
             emit('update_map', game_state["fortresses"], broadcast=True)
-            emit('update_face_colors', game_state["face_colors"], broadcast=True)
+            emit('update_face_colors', {
+                "colors": game_state["face_colors"],
+                "owners": game_state["sector_owners"]
+            }, broadcast=True)
 
     def assign_home_sector(user):
         spawn_ai_sector()
@@ -288,7 +298,10 @@ def create_app():
             emit('focus_camera', {'position': [cx, cy, cz]})
             break
 
-        emit('update_face_colors', game_state["face_colors"], broadcast=True)
+        emit('update_face_colors', {
+            "colors": game_state["face_colors"],
+            "owners": game_state["sector_owners"]
+        }, broadcast=True)
         emit('update_map', game_state["fortresses"], broadcast=True)
 
     def spawn_ai_sector():

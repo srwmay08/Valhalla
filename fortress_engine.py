@@ -1,7 +1,8 @@
 import random
 from config import (
     FORTRESS_TYPES, NEUTRAL_GARRISON_MIN, NEUTRAL_GARRISON_MAX,
-    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3, TERRAIN_BUILD_OPTIONS
+    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3, TERRAIN_BUILD_OPTIONS,
+    TERRAIN_BONUSES
 )
 
 def initialize_fortresses(game_state):
@@ -52,7 +53,6 @@ def initialize_fortresses(game_state):
 
 def process_fortress_production(game_state):
     changes_made = False
-    from config import FORTRESS_TYPES, TERRAIN_BONUSES
     
     # Use the O(1) dominance cache populated by combat_engine
     dominance = game_state.get("dominance_cache", {})
@@ -73,8 +73,16 @@ def process_fortress_production(game_state):
         if dominance.get(fid) == fort['owner']:
             final_gen *= 1.5
             
-        if fort['units'] < final_cap:
-            fort['units'] = min(final_cap, fort['units'] + final_gen)
+        # FIX: Ensure cap is at least high enough to allow accumulating for an upgrade
+        current_tier = fort['tier']
+        if current_tier < 3:
+            cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
+            effective_cap = max(final_cap, cost + 10)
+        else:
+            effective_cap = final_cap
+            
+        if fort['units'] < effective_cap:
+            fort['units'] = min(effective_cap, fort['units'] + final_gen)
             changes_made = True
             
     return changes_made

@@ -1,6 +1,8 @@
 export class UIManager {
     constructor() {
         this.client = null;
+        this.currentSelection = { type: null, id: null, terrain: null };
+        
         this.hoverMonitor = document.createElement('div');
         this.hoverMonitor.style.position = 'absolute';
         this.hoverMonitor.style.bottom = '20px';
@@ -23,6 +25,9 @@ export class UIManager {
         this.actionArea = document.getElementById('action-area');
         this.specContainer = document.getElementById('spec-container');
         this.btnAction = document.getElementById('btn-action');
+
+        // Listen for dynamic updates to refresh data without closing the panel
+        document.addEventListener('uiRefreshRequired', () => this.refreshUI());
     }
 
     setClient(client) {
@@ -39,6 +44,7 @@ export class UIManager {
     }
 
     showFortressInfo(fort) {
+        this.currentSelection = { type: 'fortress', id: fort.id };
         this.infoPanel.style.display = 'block';
         this.uiLand.innerText = `FORTRESS VTX-${fort.id}`;
         this.uiType.innerText = fort.type;
@@ -55,6 +61,7 @@ export class UIManager {
     }
 
     showFaceInfo(faceIdx, terrain, owner) {
+        this.currentSelection = { type: 'face', id: faceIdx, terrain: terrain };
         this.infoPanel.style.display = 'block';
         this.uiLand.innerText = `SECTOR SEC-${faceIdx}`;
         this.uiType.innerText = `LAND: ${terrain}`;
@@ -62,6 +69,30 @@ export class UIManager {
         this.uiUnits.innerText = "N/A";
         this.uiTier.innerText = "N/A";
         this.actionArea.style.display = 'none';
+    }
+
+    refreshUI() {
+        if (!this.client || !this.currentSelection.type) return;
+
+        if (this.currentSelection.type === 'fortress') {
+            const fort = this.client.getFortress(this.currentSelection.id);
+            if (fort) {
+                // Live refresh text attributes dynamically
+                this.uiOwner.innerText = fort.owner || "NEUTRAL";
+                this.uiUnits.innerText = Math.floor(fort.units);
+                this.uiTier.innerText = fort.tier;
+                this.uiType.innerText = fort.type;
+                
+                if (fort.owner === this.client.username) {
+                    this.actionArea.style.display = 'block';
+                } else {
+                    this.actionArea.style.display = 'none';
+                }
+            }
+        } else if (this.currentSelection.type === 'face') {
+            const owner = this.client.gameState.sector_owners[this.currentSelection.id];
+            this.uiOwner.innerText = owner || "UNCLAIMED";
+        }
     }
 
     updateSpecOptions(fort) {
@@ -91,6 +122,7 @@ export class UIManager {
     }
 
     hideInfo() {
+        this.currentSelection = { type: null, id: null, terrain: null };
         this.infoPanel.style.display = 'none';
     }
 
