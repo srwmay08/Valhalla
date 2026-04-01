@@ -5,6 +5,10 @@ export class GameClient {
         this.callbacks = callbacks;
         this.isLocked = true;
         
+        // State management for race condition prevention
+        this.isStateLoaded = false;
+        this.eventQueue = [];
+        
         const usernameElement = document.getElementById('username-store');
         this.username = usernameElement ? usernameElement.innerText : 'Anonymous'; 
         
@@ -36,10 +40,26 @@ export class GameClient {
                 .then(data => {
                     console.log("[CLIENT DEBUG] GameState Data Received. Fortress Count:", Object.keys(data.fortresses).length);
                     this.gameState = data;
+                    this.isStateLoaded = true;
                     
                     if (this.callbacks.onInit) {
                         console.log("[CLIENT DEBUG] Triggering Renderer Initialization...");
                         this.callbacks.onInit(data);
+                    }
+                    
+                    // Flush any socket events that arrived while downloading the world state
+                    if (this.eventQueue.length > 0) {
+                        console.log(`[CLIENT DEBUG] Flushing ${this.eventQueue.length} queued events...`);
+                        this.eventQueue.forEach(event => {
+                            if (event.type === 'update_map') {
+                                this.handleUpdateMap(event.payload);
+                            } else if (event.type === 'update_face_colors') {
+                                this.handleUpdateFaceColors(event.payload);
+                            } else if (event.type === 'focus_camera') {
+                                this.handleFocusCamera(event.payload);
+                            }
+                        });
+                        this.eventQueue = [];
                     }
                     
                     if (this.callbacks.onStartSequence) {
@@ -61,39 +81,58 @@ export class GameClient {
         });
 
         this.socket.on('update_map', (fortresses) => {
-            // Log every 10th update to avoid flooding but confirm activity
-            if (Math.random() < 0.1) console.log("[CLIENT DEBUG] update_map received.");
-            this.gameState.fortresses = fortresses;
-            if (this.callbacks.onMapUpdate) {
-                this.callbacks.onMapUpdate(fortresses);
+            if (!this.isStateLoaded) {
+                this.eventQueue.push({ type: 'update_map', payload: fortresses });
+                return;
             }
-            // Fire refresh event to dynamically update the UI info panel
-            document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
+            this.handleUpdateMap(fortresses);
         });
 
         this.socket.on('update_face_colors', (payload) => {
-            console.log("[CLIENT DEBUG] update_face_colors received.");
-            
-            // Extract the combined payload
-            let colors = payload;
-            if (payload && payload.colors) {
-                colors = payload.colors;
-                this.gameState.sector_owners = payload.owners;
+            if (!this.isStateLoaded) {
+                this.eventQueue.push({ type: 'update_face_colors', payload: payload });
+                return;
             }
-            
-            if (this.callbacks.onColorUpdate) {
-                this.callbacks.onColorUpdate(colors, this.gameState.sector_owners, this.username);
-            }
-            // Fire refresh event to dynamically update the UI info panel
-            document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
+            this.handleUpdateFaceColors(payload);
         });
         
         this.socket.on('focus_camera', (data) => {
-             console.log("[CLIENT DEBUG] focus_camera command received for pos:", data.position);
-             if (this.callbacks.onFocus) {
-                this.callbacks.onFocus(data.position);
-             }
+            if (!this.isStateLoaded) {
+                this.eventQueue.push({ type: 'focus_camera', payload: data });
+                return;
+            }
+            this.handleFocusCamera(data);
         });
+    }
+
+    handleUpdateMap(fortresses) {
+        if (Math.random() < 0.1) console.log("[CLIENT DEBUG] update_map processed.");
+        this.gameState.fortresses = fortresses;
+        if (this.callbacks.onMapUpdate) {
+            this.callbacks.onMapUpdate(fortresses);
+        }
+        document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
+    }
+
+    handleUpdateFaceColors(payload) {
+        console.log("[CLIENT DEBUG] update_face_colors processed.");
+        let colors = payload;
+        if (payload && payload.colors) {
+            colors = payload.colors;
+            this.gameState.sector_owners = payload.owners;
+        }
+        
+        if (this.callbacks.onColorUpdate) {
+            this.callbacks.onColorUpdate(colors, this.gameState.sector_owners, this.username);
+        }
+        document.dispatchEvent(new CustomEvent('uiRefreshRequired'));
+    }
+
+    handleFocusCamera(data) {
+        console.log("[CLIENT DEBUG] focus_camera command processed for pos:", data.position);
+        if (this.callbacks.onFocus) {
+            this.callbacks.onFocus(data.position);
+        }
     }
 
     getFortress(id) {
