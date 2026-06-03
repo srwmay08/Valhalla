@@ -1,104 +1,78 @@
+"""
+Valhalla Fortress Engine: Resource Generation and Construction Logic.
+Handles the state of Vertices as strategic fortification points.
+"""
 import random
 from config import (
     FORTRESS_TYPES, NEUTRAL_GARRISON_MIN, NEUTRAL_GARRISON_MAX,
-    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3, TERRAIN_BUILD_OPTIONS,
-    TERRAIN_BONUSES
+    UPGRADE_COST_TIER_2, UPGRADE_COST_TIER_3, TERRAIN_BUILD_OPTIONS
 )
 
 def initialize_fortresses(game_state):
+    """Sets initial structures and neutral garrisons based on vertex biome touch."""
     num_vertices = len(game_state["vertices"])
     faces = game_state["faces"]
     face_terrain = game_state["face_terrain"]
     
     vertex_neighbors = {i: set() for i in range(num_vertices)}
     for f_idx, face in enumerate(faces):
-        t = face_terrain[f_idx]
-        for v in face:
-            vertex_neighbors[v].add(t)
+        for v in face: vertex_neighbors[v].add(face_terrain[f_idx])
             
     fortresses = {}
     for i in range(num_vertices):
         neighbors = list(vertex_neighbors[i])
+        
+        # Structure Pool: The UNION of what can be built on all surrounding terrain types
         valid_pool = set()
         for t in neighbors:
-            options = TERRAIN_BUILD_OPTIONS.get(t, TERRAIN_BUILD_OPTIONS["Default"])
-            valid_pool.update(options)
-            
-        valid_pool_list = list(valid_pool) if valid_pool else ["Keep"]
-        weighted_options = {}
-        total_prob = 0.0
+            valid_pool.update(TERRAIN_BUILD_OPTIONS.get(t, TERRAIN_BUILD_OPTIONS["Default"]))
         
-        for ftype in valid_pool_list:
-            if ftype in FORTRESS_TYPES:
-                prob = FORTRESS_TYPES[ftype]["prob"]
-                weighted_options[ftype] = prob
-                total_prob += prob
-                
-        choice = random.choices(list(weighted_options.keys()), weights=list(weighted_options.values()))[0] if total_prob > 0 else "Keep"
+        valid_list = list(valid_pool) if valid_pool else ["Keep"]
+        
+        # Select structure using probability weights from config
+        weighted = {ft: FORTRESS_TYPES[ft]["prob"] for ft in valid_list if ft in FORTRESS_TYPES}
+        choice = random.choices(list(weighted.keys()), weights=list(weighted.values()))[0] if weighted else "Keep"
 
         fortresses[str(i)] = {
-            "id": i, 
-            "owner": None, 
-            "units": random.randint(NEUTRAL_GARRISON_MIN, NEUTRAL_GARRISON_MAX),
-            "race": "Neutral", 
-            "is_capital": False, 
-            "special_active": False,
-            "tier": 1, 
-            "paths": [],
-            "type": choice,
-            "neighbor_terrains": neighbors,
-            "land_type": neighbors[0] if neighbors else "Plain"
+            "id": i, "owner": None, "units": random.randint(NEUTRAL_GARRISON_MIN, NEUTRAL_GARRISON_MAX),
+            "race": "Neutral", "is_capital": False, "tier": 1, "paths": [], "type": choice,
+            "neighbor_terrains": neighbors
         }
     return fortresses
 
 def process_fortress_production(game_state):
-    changes_made = False
-    
-    # Use the O(1) dominance cache populated by combat_engine
-    dominance = game_state.get("dominance_cache", {})
+    """Calculates tick-based unit generation with terrain and dominance bonuses."""
+    changes = False
+    from config import FORTRESS_TYPES, TERRAIN_BONUSES
     
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
         
         stats = FORTRESS_TYPES[fort['type']]
-        final_cap = stats['cap']
-        final_gen = stats['gen_mult']
+        final_cap, final_gen = stats['cap'], stats['gen_mult']
         
+        # Apply terrain-touch bonuses
         for t in fort['neighbor_terrains']:
             if t in TERRAIN_BONUSES:
                 final_cap += TERRAIN_BONUSES[t].get("cap", 0)
                 final_gen += TERRAIN_BONUSES[t].get("gen_mult", 0.0)
         
-        # O(1) Lookup
-        if dominance.get(fid) == fort['owner']:
-            final_gen *= 1.5
+        # Sector Dominance: 50% generation boost if any touching face is fully owned
+        for face in game_state["faces"]:
+            if int(fid) in face and game_state["sector_owners"].get(str(game_state["faces"].index(face))) == fort['owner']:
+                final_gen *= 1.5; break
             
-        # FIX: Ensure cap is at least high enough to allow accumulating for an upgrade
-        current_tier = fort['tier']
-        if current_tier < 3:
-            cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
-            effective_cap = max(final_cap, cost + 10)
-        else:
-            effective_cap = final_cap
-            
-        if fort['units'] < effective_cap:
-            fort['units'] = min(effective_cap, fort['units'] + final_gen)
-            changes_made = True
-            
-    return changes_made
+        if fort['units'] < final_cap:
+            fort['units'] = min(final_cap, fort['units'] + final_gen); changes = True
+    return changes
 
 def process_fortress_upgrades(game_state):
-    changes_made = False
+    """Automatic logic for spending units to advance fortress tier."""
+    changes = False
     for fid, fort in game_state["fortresses"].items():
         if not fort['owner']: continue
-        current_tier = fort['tier']
-        if current_tier < 3:
-            cost = UPGRADE_COST_TIER_2 if current_tier == 1 else UPGRADE_COST_TIER_3
-            if fort['units'] >= cost + 10:
-                fort['units'] -= cost
-                fort['tier'] += 1
-                changes_made = True
-        if len(fort['paths']) > fort['tier']:
-            fort['paths'] = fort['paths'][:fort['tier']]
-            changes_made = True
-    return changes_made
+        if fort['tier'] < 3:
+            cost = UPGRADE_COST_TIER_2 if fort['tier'] == 1 else UPGRADE_COST_TIER_3
+            if fort['units'] >= cost + 10: # Keep 10 units for defense
+                fort['units'] -= cost; fort['tier'] += 1; changes = True
+    return changes

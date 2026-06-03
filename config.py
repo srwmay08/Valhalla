@@ -1,5 +1,6 @@
 """
 Configuration file for Valhalla Tower Defense.
+Contains constants for security, world gen, gameplay mechanics, and visuals.
 """
 import os
 
@@ -10,14 +11,17 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID')
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET')
 
 # ==========================================
-#        WORLD GENERATION
+#        WORLD GENERATION PARAMETERS
 # ==========================================
+# Oceans and Seas
 SURFACE_OCEANS = 4
 SUBTERRANEAN_SEAS = 15
 MIN_SURFACE_DEEP_SEA_PERCENT = 0.20
 MAX_SURFACE_DEEP_SEA_PERCENT = 0.40
 MIN_SUBTERRANEAN_SEA_PERCENT = 0.05
 MAX_SUBTERRANEAN_SEA_PERCENT = 0.15
+
+# Environmental Hazards and Biomes
 LAVA_RIVERS = True
 NUM_LAVA_RIVERS = 25
 LAVA_RIVERS_MIN_LENGTH = 15
@@ -28,7 +32,10 @@ SPAWN_CHANCE_CAVERN = 0.005
 MOUNTAIN_RANGE_MIN_LENGTH = 8
 MOUNTAIN_RANGE_MAX_LENGTH = 22
 
-SCALES = ["Life/Death", "Heat/Cold", "Exertion/Torpor", "Magic/Drain", "Order/Chaos", "Luck/Woe"]
+# Spherical Geometry
+ICO_SUBDIVISIONS = 2  
+
+# Visual Biome Palette
 TERRAIN_COLORS = {
     "Deep Sea": 0x000033,
     "Sea": 0x00008B,
@@ -44,24 +51,23 @@ TERRAIN_COLORS = {
 }
 
 # ==========================================
-#        GAMEPLAY SETTINGS
+#        GAMEPLAY BALANCE SETTINGS
 # ==========================================
-
 MAX_PLAYERS = 4
-ICO_SUBDIVISIONS = 2  
+TICK_RATE = 1.0  # Seconds between logic updates
 
-# --- Resources & Economy ---
+# Economy
 STARTING_UNITS_POOL = 45 
 NEUTRAL_GARRISON_MIN = 5
 NEUTRAL_GARRISON_MAX = 100
-TICK_RATE = 1.0
-FLOW_RATE = 0.5 
+FLOW_RATE = 0.5  # Units per tick subtracted from fort and sent into path
 
-# --- Upgrades ---
+# Upgrades
 UPGRADE_COST_TIER_2 = 50
 UPGRADE_COST_TIER_3 = 120
 
-# --- Fortress Types & Unit Classes ---
+# Structure Stats
+# gen_mult: Unit generation speed | cap: Max units node can hold | modifiers: Combat effectiveness
 FORTRESS_TYPES = {
     "Keep": {"prob": 0.3, "gen_mult": 1.0, "cap": 60, "def_mod": 1.0, "atk_mod": 1.0, "unit_class": "Soldier", "desc": "Balanced"},
     "Grain Farm": {"prob": 0.15, "gen_mult": 2.0, "cap": 40, "def_mod": 0.7, "atk_mod": 0.8, "unit_class": "Swarm", "desc": "Conscript/Swarm"},
@@ -71,13 +77,13 @@ FORTRESS_TYPES = {
     "Blacksmith": {"prob": 0.15, "gen_mult": 0.8, "cap": 80, "def_mod": 1.4, "atk_mod": 1.0, "unit_class": "Siege", "desc": "Siege/Tank"}
 }
 
-# --- Special Units ---
+# Advanced Units (Spawned via Sanctuaries)
 SPECIAL_UNITS = {
     "Hero": {"atk": 3.0, "def": 2.0, "speed": 1.0, "size": 15, "cooldown": 50, "desc": "Patrols Sector"},
     "Titan": {"atk": 5.0, "def": 4.0, "speed": 0.5, "size": 30, "cooldown": 100, "desc": "Siege Unit"}
 }
 
-# --- Class Combat Multipliers ---
+# Rock-Paper-Scissors Combat Modifiers
 CLASS_MULTIPLIERS = {
     "Siege": {"Fortress": 3.0, "Unit": 0.5},
     "Ranged": {"Unit": 1.5, "Fortress": 0.8},
@@ -89,7 +95,7 @@ CLASS_MULTIPLIERS = {
     "Titan": {"Unit": 1.0, "Fortress": 4.0}  
 }
 
-# --- Terrain Construction Rules ---
+# Terrain Construction Restrictions
 TERRAIN_BUILD_OPTIONS = {
     "Waste": ["Keep"],
     "Mountain": ["Keep", "Tower", "Laboratory", "Blacksmith"],
@@ -104,20 +110,20 @@ TERRAIN_BUILD_OPTIONS = {
     "Default": ["Keep"]
 }
 
-# --- Terrain Bonuses ---
+# Terrain-specific stat bonuses applied to fortresses touching them
 TERRAIN_BONUSES = {
-    "Mountain": {"def_mod": 0.2, "atk_mod": 0.1, "desc": "+Def/Atk"},
-    "Lava": {"atk_mod": 0.2, "def_mod": -0.1, "desc": "+Atk/-Def"},
-    "Forest": {"range": 15, "gen_mult": 0.1, "desc": "+Range/Gen"},
-    "Hill": {"range": 10, "def_mod": 0.1, "desc": "+Range/Def"},
-    "Swamp": {"def_mod": 0.3, "gen_mult": -0.1, "desc": "Turtle"},
-    "Farm": {"gen_mult": 0.3, "cap": 20, "desc": "Massive Gen"},
-    "Waste": {"cap": -10, "atk_mod": 0.1, "desc": "Hardship"},
-    "Deep Sea": {"def_mod": 0.5, "desc": "Natural Barrier"},
-    "Sea": {"gen_mult": 0.05, "desc": "Trade"}
+    "Mountain": {"def_mod": 0.2, "atk_mod": 0.1},
+    "Lava": {"atk_mod": 0.2, "def_mod": -0.1},
+    "Forest": {"range": 15, "gen_mult": 0.1},
+    "Hill": {"range": 10, "def_mod": 0.1},
+    "Swamp": {"def_mod": 0.3, "gen_mult": -0.1},
+    "Farm": {"gen_mult": 0.3, "cap": 20},
+    "Waste": {"cap": -10, "atk_mod": 0.1},
+    "Deep Sea": {"def_mod": 0.5},
+    "Sea": {"gen_mult": 0.05}
 }
 
-# --- AI Settings ---
+# --- AI Personality Profiles ---
 AI_DIFFICULTY = "Normal" 
 AI_PROFILES = {
     "Very Easy": {"expand_bias": 0.1, "reaction_delay": 4},
@@ -127,15 +133,12 @@ AI_PROFILES = {
     "Very Hard": {"expand_bias": 1.0, "reaction_delay": 0}
 }
 
-# --- Visual Settings ---
-# Player (0) is RED (0xff0000), NPC 1 Green, NPC 2 Yellow, NPC 3 Blue
+# --- Visual UI Colors ---
 PLAYER_COLORS = [0xff0000, 0x00ff00, 0xffff00, 0x0000ff]
 COLOR_NEUTRAL = 0x888888
 COLOR_HIGHLIGHT = 0xffff00
-COLOR_CONN_VALID = 0x00ff00
-COLOR_CONN_INVALID = 0xff0000
 
-# --- Races ---
+# --- Racial Base Stats ---
 RACES = {
     "Human": {"color": 0xff0000, "base_atk": 1.0, "base_def": 1.0, "speed": 1.0},
     "Orc": {"color": 0x00ff00, "base_atk": 1.4, "base_def": 0.7, "speed": 1.2},

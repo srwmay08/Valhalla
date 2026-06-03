@@ -1,7 +1,8 @@
 import os
 import random
 import time
-from threading import Lock
+import json
+from threading import RLock
 from flask import Flask, jsonify, render_template, request, redirect, url_for, flash
 from flask_pymongo import PyMongo
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
@@ -35,7 +36,7 @@ login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
 thread = None
-thread_lock = Lock()
+thread_lock = RLock()
 
 # --- Global Game State ---
 game_state = {
@@ -48,7 +49,7 @@ game_state = {
     "roads": [],
     "fortresses": {},
     "sector_owners": {},
-    "dominance_cache": {} # Added for O(1) production lookups
+    "dominance_cache": {}
 }
 
 # --- User Class ---
@@ -93,14 +94,14 @@ def background_thread():
             map_changed = False
             color_changed = False
 
-            # 1. Sector Dominance (Updates dominance_cache)
+            # 1. Sector Dominance
             if combat_engine.process_sector_dominance(game_state):
                 color_changed = True
 
-            # 2. AI Logic (Now handles decommissioning)
+            # 2. AI Logic
             process_ai_turn(game_state)
             
-            # 3. Fortress Production (Uses O(1) cache)
+            # 3. Fortress Production
             if fortress_engine.process_fortress_production(game_state):
                 map_changed = True
                 
@@ -130,6 +131,16 @@ def create_app():
     bcrypt.init_app(app)
     socketio.init_app(app)
     login_manager.init_app(app)
+
+    # Pre-initialize world state before handling any traffic
+    with thread_lock:
+        if not game_state["initialized"]: 
+            print("[SERVER] Initializing world...")
+            world_data = world_engine.generate_game_world()
+            game_state.update(world_data)
+            game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
+            game_state["initialized"] = True
+            print("[SERVER] World successfully generated and ready.")
 
     @app.route('/')
     @login_required
@@ -199,27 +210,44 @@ def create_app():
 
     @app.route('/api/gamestate')
     def get_gamestate_api():
-        with thread_lock:
-            if not game_state["initialized"]: 
-                print("[SERVER] Initializing world...")
-                world_data = world_engine.generate_game_world()
-                game_state.update(world_data)
-                game_state["fortresses"] = fortress_engine.initialize_fortresses(game_state)
-                game_state["initialized"] = True
-            
-            from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
-            return jsonify({
-                "vertices": game_state["vertices"],
-                "faces": game_state["faces"],
-                "face_colors": game_state["face_colors"],
-                "sector_owners": game_state.get("sector_owners", {}),
-                "roads": game_state["roads"],
-                "fortresses": game_state["fortresses"],
-                "adj": game_state["adj"],
-                "races": RACES,
-                "fortress_types": FORTRESS_TYPES,
-                "terrain_build_options": TERRAIN_BUILD_OPTIONS
-            })
+        try:
+            with thread_lock:
+                from config import FORTRESS_TYPES, RACES, TERRAIN_BUILD_OPTIONS
+                
+                # Deep sanitizer to catch both Numpy KEYS and VALUES for the API response
+                def sanitize(obj):
+                    if isinstance(obj, dict):
+                        # JSON strictly requires strings for keys.
+                        return {str(k): sanitize(v) for k, v in obj.items()}
+                    elif isinstance(obj, list) or isinstance(obj, tuple):
+                        return [sanitize(x) for x in obj]
+                    elif type(obj).__module__ == 'numpy':
+                        if hasattr(obj, 'item'):
+                            return obj.item()
+                        elif hasattr(obj, 'tolist'):
+                            return obj.tolist()
+                    return obj
+
+                payload = {
+                    "vertices": game_state["vertices"],
+                    "faces": game_state["faces"],
+                    "face_colors": game_state["face_colors"],
+                    "sector_owners": game_state.get("sector_owners", {}),
+                    "roads": game_state["roads"],
+                    "fortresses": game_state["fortresses"],
+                    "adj": game_state["adj"],
+                    "races": RACES,
+                    "fortress_types": FORTRESS_TYPES,
+                    "terrain_build_options": TERRAIN_BUILD_OPTIONS
+                }
+                
+                safe_payload = sanitize(payload)
+                return jsonify(safe_payload)
+        except Exception as e:
+            import traceback
+            print(f"[API ERROR] Failed to serialize gamestate: {e}")
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
     @socketio.on('connect')
     def handle_connect():
@@ -227,13 +255,14 @@ def create_app():
         with thread_lock:
             if thread is None:
                 thread = socketio.start_background_task(background_thread)
-        if current_user.is_authenticated:
-            emit('update_face_colors', {
-                "colors": game_state["face_colors"],
-                "owners": game_state["sector_owners"]
-            })
-            emit('update_map', game_state["fortresses"])
-            assign_home_sector(current_user)
+            
+            if current_user.is_authenticated:
+                emit('update_face_colors', {
+                    "colors": game_state["face_colors"],
+                    "owners": game_state["sector_owners"]
+                })
+                emit('update_map', game_state["fortresses"])
+                assign_home_sector(current_user)
 
     @socketio.on('restart_game')
     @login_required
@@ -253,56 +282,57 @@ def create_app():
             }, broadcast=True)
 
     def assign_home_sector(user):
-        spawn_ai_sector()
-        
-        existing_forts = [f for f in game_state["fortresses"].values() if f['owner'] == user.username]
-        if existing_forts:
-            vid = int(existing_forts[0]['id'])
-            v_pos = game_state["vertices"][vid]
-            emit('focus_camera', {'position': v_pos})
-            return 
-        
-        available_faces = list(enumerate(game_state["faces"]))
-        random.shuffle(available_faces)
+        with thread_lock:
+            spawn_ai_sector()
+            
+            existing_forts = [f for f in game_state["fortresses"].values() if f['owner'] == user.username]
+            if existing_forts:
+                vid = int(existing_forts[0]['id'])
+                v_pos = game_state["vertices"][vid]
+                emit('focus_camera', {'position': v_pos})
+                return 
+            
+            available_faces = list(enumerate(game_state["faces"]))
+            random.shuffle(available_faces)
 
-        for i, face in available_faces:
-            terrain = game_state.get("face_terrain", [])[i]
-            if terrain in ["Deep Sea", "Sea"]:
-                continue
-            
-            v1, v2, v3 = [str(x) for x in face]
-            if any(game_state["fortresses"][v]['owner'] for v in [v1, v2, v3]):
-                continue
+            for i, face in available_faces:
+                terrain = game_state.get("face_terrain", [])[i]
+                if terrain in ["Deep Sea", "Sea"]:
+                    continue
+                
+                v1, v2, v3 = [str(x) for x in face]
+                if any(game_state["fortresses"][v]['owner'] for v in [v1, v2, v3]):
+                    continue
 
-            game_state["face_colors"][i] = world_engine.darken_color(RACES["Human"]["color"], factor=0.4)
-            units = STARTING_UNITS_POOL // 3
-            
-            for vid in [v1, v2, v3]:
-                game_state["fortresses"][vid].update({
-                    "owner": user.username,
-                    "units": units,
-                    "race": "Human",
-                    "is_capital": True,
-                    "special_active": True,
-                    "tier": 1,
-                    "paths": [],
-                    "type": "Keep" 
-                })
-            game_state["sector_owners"][str(i)] = user.username
-            
-            coords = [game_state["vertices"][int(v)] for v in [v1, v2, v3]]
-            cx = sum(c[0] for c in coords) / 3
-            cy = sum(c[1] for c in coords) / 3
-            cz = sum(c[2] for c in coords) / 3
-            
-            emit('focus_camera', {'position': [cx, cy, cz]})
-            break
+                game_state["face_colors"][i] = int(world_engine.darken_color(RACES["Human"]["color"], factor=0.4))
+                units = int(STARTING_UNITS_POOL // 3)
+                
+                for vid in [v1, v2, v3]:
+                    game_state["fortresses"][vid].update({
+                        "owner": user.username,
+                        "units": units,
+                        "race": "Human",
+                        "is_capital": True,
+                        "special_active": True,
+                        "tier": 1,
+                        "paths": [],
+                        "type": "Keep" 
+                    })
+                game_state["sector_owners"][str(i)] = user.username
+                
+                coords = [game_state["vertices"][int(v)] for v in [v1, v2, v3]]
+                cx = float(sum(c[0] for c in coords) / 3)
+                cy = float(sum(c[1] for c in coords) / 3)
+                cz = float(sum(c[2] for c in coords) / 3)
+                
+                emit('focus_camera', {'position': [cx, cy, cz]})
+                break
 
-        emit('update_face_colors', {
-            "colors": game_state["face_colors"],
-            "owners": game_state["sector_owners"]
-        }, broadcast=True)
-        emit('update_map', game_state["fortresses"], broadcast=True)
+            emit('update_face_colors', {
+                "colors": game_state["face_colors"],
+                "owners": game_state["sector_owners"]
+            }, broadcast=True)
+            emit('update_map', game_state["fortresses"], broadcast=True)
 
     def spawn_ai_sector():
         if any(f['owner'] == AI_NAME for f in game_state["fortresses"].values()):
@@ -318,9 +348,9 @@ def create_app():
             v1, v2, v3 = [str(x) for x in face]
             if not any(game_state["fortresses"][v]['owner'] for v in [v1, v2, v3]):
                 ai_color = RACES["Orc"]["color"]
-                game_state["face_colors"][i] = world_engine.darken_color(ai_color, factor=0.4)
+                game_state["face_colors"][i] = int(world_engine.darken_color(ai_color, factor=0.4))
                 
-                units = STARTING_UNITS_POOL // 3
+                units = int(STARTING_UNITS_POOL // 3)
                 for vid in [v1, v2, v3]:
                     game_state["fortresses"][vid].update({
                         "owner": AI_NAME,
